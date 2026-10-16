@@ -151,7 +151,8 @@ fun PlanScreen() {
         waypoints.forEachIndexed { i, p ->
             mapView.overlays.add(Marker(mapView).apply {
                 position = p
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                icon = WaypointIcons.forIndex(context, i, waypoints.size)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 title = pointLabel(i, waypoints.size)
                 alpha = if (selectedIndex == null || selectedIndex == i) 1f else 0.4f
                 isDraggable = true
