@@ -50,6 +50,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.wolaang.app.WolaangApp
+import de.wolaang.app.data.GpxReader
 import de.wolaang.app.data.GpxShare
 import de.wolaang.app.data.GpxWriter
 import de.wolaang.app.data.model.PlannedRoute
@@ -208,6 +209,19 @@ fun PlanScreen() {
         val pts = waypoints.map { it.latitude to it.longitude }
         if (pts.size < 2) {
             missingSegments = emptyList()
+            return@LaunchedEffect
+        }
+        // An opened saved route shows its stored line (exact for imports, no tiles needed)
+        // until the user changes points or profile.
+        val editing = editingRoute
+        if (editing != null && savedState == (waypoints.toList() to tourType)) {
+            missingSegments = emptyList()
+            route = RouteResult(
+                points = GpxReader.readTrack(editing.gpxData),
+                distanceMeters = editing.distanceMeters.toInt(),
+                ascentMeters = editing.ascentMeters,
+                durationSeconds = editing.estimatedDurationSeconds.toInt(),
+            )
             return@LaunchedEffect
         }
         missingSegments = router.missingSegments(pts)

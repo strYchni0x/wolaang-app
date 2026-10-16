@@ -25,6 +25,20 @@ class AppSettings(context: Context) {
         _themeMode.value = mode
     }
 
+    private val _importTarget = MutableStateFlow(
+        prefs.getString(KEY_IMPORT_TARGET, null)
+            ?.let { runCatching { ImportTarget.valueOf(it) }.getOrNull() }
+            ?: ImportTarget.PLANNED
+    )
+
+    /** Default target for GPX imports (planned routes; recorded tours e.g. for a Komoot move). */
+    val importTarget: StateFlow<ImportTarget> = _importTarget.asStateFlow()
+
+    fun setImportTarget(target: ImportTarget) {
+        prefs.edit().putString(KEY_IMPORT_TARGET, target.name).apply()
+        _importTarget.value = target
+    }
+
     /** Activity type chosen for the last recording; preselected next time. */
     var lastRecordingType: TourType
         get() = prefs.getString(KEY_LAST_RECORDING_TYPE, null)
@@ -35,5 +49,6 @@ class AppSettings(context: Context) {
     private companion object {
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_RECORDING_TYPE = "last_recording_type"
+        const val KEY_IMPORT_TARGET = "import_target"
     }
 }

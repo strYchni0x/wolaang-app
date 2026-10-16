@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
+import de.wolaang.app.data.ImportTarget
 import de.wolaang.app.data.ThemeMode
 import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.routing.SegmentInfo
@@ -63,9 +64,27 @@ fun SettingsScreen() {
     ) {
         SectionTitle("Design")
         Column(modifier = Modifier.selectableGroup()) {
-            ThemeOption("Wie System", ThemeMode.SYSTEM, themeMode) { settings.setThemeMode(it) }
-            ThemeOption("Hell", ThemeMode.LIGHT, themeMode) { settings.setThemeMode(it) }
-            ThemeOption("Dunkel", ThemeMode.DARK, themeMode) { settings.setThemeMode(it) }
+            RadioOption("Wie System", themeMode == ThemeMode.SYSTEM) { settings.setThemeMode(ThemeMode.SYSTEM) }
+            RadioOption("Hell", themeMode == ThemeMode.LIGHT) { settings.setThemeMode(ThemeMode.LIGHT) }
+            RadioOption("Dunkel", themeMode == ThemeMode.DARK) { settings.setThemeMode(ThemeMode.DARK) }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+        val importTarget by settings.importTarget.collectAsStateWithLifecycle()
+        SectionTitle("GPX-Import")
+        Text(
+            "Standard-Ziel für importierte Dateien (beim Import änderbar):",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(modifier = Modifier.selectableGroup()) {
+            RadioOption("Geplante Routen", importTarget == ImportTarget.PLANNED) {
+                settings.setImportTarget(ImportTarget.PLANNED)
+            }
+            RadioOption("Aufgezeichnete Touren (z. B. Übernahme aus Komoot)", importTarget == ImportTarget.RECORDED) {
+                settings.setImportTarget(ImportTarget.RECORDED)
+            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
@@ -85,20 +104,15 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun ThemeOption(
-    label: String,
-    mode: ThemeMode,
-    current: ThemeMode,
-    onSelect: (ThemeMode) -> Unit,
-) {
+internal fun RadioOption(label: String, selected: Boolean, onSelect: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = mode == current, role = Role.RadioButton) { onSelect(mode) }
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
             .padding(vertical = 8.dp),
     ) {
-        RadioButton(selected = mode == current, onClick = null)
+        RadioButton(selected = selected, onClick = null)
         Text(label, modifier = Modifier.padding(start = 12.dp))
     }
 }

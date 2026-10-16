@@ -30,6 +30,9 @@ class AppContainer(context: Context) {
     /** Offline route planning (BRouter). */
     val offlineRouter: OfflineRouter = OfflineRouter(context)
 
+    /** GPX import into planned routes or recorded tours. */
+    val gpxImporter: GpxImporter = GpxImporter(context.contentResolver, tourDao, plannedRouteDao)
+
     /** User preferences (theme, …). */
     val settings: AppSettings = AppSettings(context)
 
