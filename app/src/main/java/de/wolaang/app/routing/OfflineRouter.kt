@@ -148,13 +148,17 @@ class OfflineRouter(context: Context) {
             )
         }
 
-    /** Copies the bundled profiles to filesDir, since BRouter reads them as plain files. */
+    /**
+     * Copies the bundled profiles to filesDir, since BRouter reads them as plain files.
+     * Re-copies after an app update, so tuned profiles reach existing installs too.
+     */
     private fun ensureProfiles() {
         profileDir.mkdirs()
         val assetDir = "brouter/profiles2"
+        val appUpdated = appContext.packageManager.getPackageInfo(appContext.packageName, 0).lastUpdateTime
         appContext.assets.list(assetDir)?.forEach { name ->
             val target = File(profileDir, name)
-            if (!target.exists()) {
+            if (!target.exists() || target.lastModified() < appUpdated) {
                 appContext.assets.open("$assetDir/$name").use { input ->
                     target.outputStream().use { input.copyTo(it) }
                 }
@@ -167,7 +171,7 @@ class OfflineRouter(context: Context) {
         private const val MAX_RUNNING_TIME_MS = 60_000L
 
         fun profileFor(type: TourType) = when (type) {
-            TourType.HIKE -> "hiking-mountain.brf"
+            TourType.HIKE -> "wolaang-hiking.brf"
             TourType.BIKE -> "trekking.brf"
         }
 

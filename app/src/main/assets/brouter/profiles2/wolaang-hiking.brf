@@ -1,3 +1,9 @@
+# wolaang hiking profile: BRouter "hiking-mountain" (v1.8.7, poutnik) with
+# path_preference = 5.0, so footways, paths and tracks win over roads.
+# Compared on flat test walks around Diepholz/Lemfoerde (2026-10-16): share of
+# real paths 24->50%, 72->95%, 80->84%, 85->89% at most +0.3 km. Values 3..8
+# give identical routes there. SAC limits unchanged, so mountains still work.
+#
 # Walking-Hiking-Mountain/Alpine Hiking profile TEMPLATE
 # 18/5/2016  v1.8.7   ! Fixed down/uphillcostfactors for shortest_way - to be really shortest
 #
@@ -23,7 +29,7 @@ assign   hiking_routes_preference 0.20 # %hiking_routes_preference% | Increases 
 
 assign   Offroad_factor           0.0  # default 0.0, see ****), see also https://github.com/poutnikl/Brouter-profiles/wiki/Trekking-MTB-Profiles---legend
 
-assign   path_preference          0.0  # 0.0 as default, try 20.0 to penalize nonpath ways a/o paved ways
+assign   path_preference          5.0  # 0.0 as default, try 20.0 to penalize nonpath ways a/o paved ways
 
 #SAC - mountain hiking - see http://wiki.openstreetmap.org/wiki/Key:sac_scale
 
