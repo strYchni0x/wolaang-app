@@ -1,0 +1,5 @@
+# BRouter data must stay byte-identical (no CRLF conversion)
+*.brf -text
+*.dat -text
+*.rd5 binary
+*.jar binary
