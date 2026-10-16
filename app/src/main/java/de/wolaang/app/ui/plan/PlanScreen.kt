@@ -97,6 +97,8 @@ fun PlanScreen() {
     var showSaveDialog by remember { mutableStateOf(false) }
     // True once the current route has been saved (reset when the route changes).
     var isSaved by remember { mutableStateOf(false) }
+    // Index of the waypoint the user tapped (to delete it), or null.
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
 
     val mapView = remember {
         MapView(context).apply {
@@ -129,11 +131,11 @@ fun PlanScreen() {
         }
     }
 
-    // Taps on the map add waypoints.
+    // Taps on the map add waypoints (or just clear the current selection).
     DisposableEffect(Unit) {
         val tapOverlay = MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-                waypoints.add(p)
+                if (selectedIndex != null) selectedIndex = null else waypoints.add(p)
                 return true
             }
 
@@ -143,19 +145,31 @@ fun PlanScreen() {
         onDispose { mapView.overlays.remove(tapOverlay) }
     }
 
-    // Draw waypoint markers.
-    LaunchedEffect(waypoints.toList()) {
+    // Draw waypoint markers. Long-press + drag moves a point, a tap selects it.
+    LaunchedEffect(waypoints.toList(), selectedIndex) {
         mapView.overlays.removeAll { it is Marker }
         waypoints.forEachIndexed { i, p ->
             mapView.overlays.add(Marker(mapView).apply {
                 position = p
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = when (i) {
-                    0 -> "Start"
-                    waypoints.lastIndex -> "Ziel"
-                    else -> "Zwischenpunkt $i"
+                title = pointLabel(i, waypoints.size)
+                alpha = if (selectedIndex == null || selectedIndex == i) 1f else 0.4f
+                isDraggable = true
+                setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                    override fun onMarkerDragStart(marker: Marker) {
+                        selectedIndex = null
+                    }
+
+                    override fun onMarkerDrag(marker: Marker) {}
+
+                    override fun onMarkerDragEnd(marker: Marker) {
+                        if (i < waypoints.size) waypoints[i] = marker.position
+                    }
+                })
+                setOnMarkerClickListener { _, _ ->
+                    selectedIndex = if (selectedIndex == i) null else i
+                    true // no info bubble
                 }
-                setOnMarkerClickListener { _, _ -> true } // no info bubble
             })
         }
         mapView.invalidate()
@@ -239,14 +253,32 @@ fun PlanScreen() {
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     if (waypoints.isNotEmpty()) {
-                        IconButton(onClick = { waypoints.clear() }) {
+                        IconButton(onClick = {
+                            selectedIndex = null
+                            waypoints.clear()
+                        }) {
                             Icon(Icons.Default.Clear, contentDescription = "Route löschen")
                         }
                     }
                 }
 
                 val progress = downloadProgress
+                val selected = selectedIndex?.takeIf { it < waypoints.size }
                 when {
+                    selected != null -> {
+                        Text(
+                            "${pointLabel(selected, waypoints.size)} ausgewählt",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                selectedIndex = null
+                                waypoints.removeAt(selected)
+                            }) { Text("Punkt löschen") }
+                            OutlinedButton(onClick = { selectedIndex = null }) { Text("Fertig") }
+                        }
+                    }
                     progress != null -> {
                         Text("Routing-Daten werden geladen… ${(progress * 100).toInt()} %")
                         Spacer(modifier = Modifier.height(4.dp))
@@ -331,6 +363,12 @@ fun PlanScreen() {
     }
 }
 
+private fun pointLabel(index: Int, count: Int): String = when (index) {
+    0 -> "Start"
+    count - 1 -> "Ziel"
+    else -> "Zwischenpunkt $index"
+}
+
 @Composable
 private fun SaveRouteDialog(
     initialName: String,
@@ -374,7 +412,7 @@ private fun RouteSummary(route: RouteResult) {
         style = MaterialTheme.typography.titleMedium,
     )
     Text(
-        "Weiteres Tippen fügt Punkte hinzu.",
+        "Tippen fügt Punkte hinzu · Punkt lange drücken zum Verschieben, antippen zum Löschen",
         style = MaterialTheme.typography.bodySmall,
     )
 }
