@@ -12,6 +12,9 @@ interface PlannedRouteDao {
     @Query("SELECT * FROM planned_routes ORDER BY createdAt DESC")
     fun getAllPlannedRoutes(): Flow<List<PlannedRoute>>
 
+    @Query("SELECT * FROM planned_routes WHERE id = :id")
+    suspend fun getPlannedRouteById(id: Long): PlannedRoute?
+
     @Insert
     suspend fun insertPlannedRoute(route: PlannedRoute): Long
 

@@ -58,6 +58,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.json.JSONArray
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
@@ -95,8 +97,13 @@ fun PlanScreen() {
     // Bumped after a tile download so routing is retried.
     var segmentsVersion by remember { mutableIntStateOf(0) }
     var showSaveDialog by remember { mutableStateOf(false) }
-    // True once the current route has been saved (reset when the route changes).
-    var isSaved by remember { mutableStateOf(false) }
+    // The saved route currently being edited (opened from the Tours tab), or null.
+    var editingRoute by remember { mutableStateOf<PlannedRoute?>(null) }
+    // Waypoints + type as last saved/loaded; the plan counts as saved while it matches.
+    var savedState by remember { mutableStateOf<Pair<List<GeoPoint>, TourType>?>(null) }
+    val isSaved = savedState == (waypoints.toList() to tourType)
+    // Fit the map to the next computed route (after opening a saved one).
+    var zoomToRoute by remember { mutableStateOf(false) }
     // Index of the waypoint the user tapped (to delete it), or null.
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
 
@@ -180,7 +187,6 @@ fun PlanScreen() {
     LaunchedEffect(waypoints.toList(), tourType, segmentsVersion) {
         errorText = null
         route = null
-        isSaved = false
         val pts = waypoints.map { it.latitude to it.longitude }
         if (pts.size < 2) {
             missingSegments = emptyList()
@@ -201,14 +207,48 @@ fun PlanScreen() {
         }
     }
 
+    // Open a saved route when the Tours tab asks for it.
+    LaunchedEffect(Unit) {
+        container.routeToOpen.collect { id ->
+            if (id == null) return@collect
+            container.routeToOpen.value = null
+            val saved = container.plannedRouteDao.getPlannedRouteById(id) ?: return@collect
+            val points = parseWaypoints(saved.waypointsJson)
+            selectedIndex = null
+            tourType = saved.type
+            waypoints.clear()
+            waypoints.addAll(points)
+            editingRoute = saved
+            savedState = points to saved.type
+            zoomToRoute = true
+        }
+    }
+
     // Draw the computed route.
     LaunchedEffect(route) {
         val r = route
         if (r == null) {
             mapView.overlays.remove(routePolyline)
         } else {
-            routePolyline.setPoints(r.points.map { GeoPoint(it.lat, it.lon) })
+            val points = r.points.map { GeoPoint(it.lat, it.lon) }
+            routePolyline.setPoints(points)
             if (routePolyline !in mapView.overlays) mapView.overlays.add(1, routePolyline)
+            if (zoomToRoute) {
+                zoomToRoute = false
+                // The info card covers roughly the top third of the map, so extend the box
+                // northwards to keep the whole route (and the pins) below it.
+                val box = BoundingBox.fromGeoPointsSafe(points + waypoints)
+                val latSpan = box.latitudeSpan
+                val lonSpan = box.longitudeSpanWithDateLine
+                val padded = BoundingBox(
+                    box.latNorth + latSpan * 0.7,
+                    box.lonEast + lonSpan * 0.1,
+                    box.latSouth - latSpan * 0.1,
+                    box.lonWest - lonSpan * 0.1,
+                )
+                // Post, so the MapView has its final size.
+                mapView.post { mapView.zoomToBoundingBox(padded, false, 60) }
+            }
         }
         mapView.invalidate()
     }
@@ -257,6 +297,8 @@ fun PlanScreen() {
                         IconButton(onClick = {
                             selectedIndex = null
                             waypoints.clear()
+                            editingRoute = null
+                            savedState = null
                         }) {
                             Icon(Icons.Default.Clear, contentDescription = "Route löschen")
                         }
@@ -317,6 +359,9 @@ fun PlanScreen() {
                         color = MaterialTheme.colorScheme.error,
                     )
                     route != null -> {
+                        editingRoute?.let {
+                            Text(it.name, style = MaterialTheme.typography.labelLarge)
+                        }
                         RouteSummary(route!!)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -324,7 +369,7 @@ fun PlanScreen() {
                                 Text(if (isSaved) "Gespeichert" else "Speichern")
                             }
                             OutlinedButton(onClick = {
-                                val name = defaultRouteName(tourType)
+                                val name = editingRoute?.name ?: defaultRouteName(tourType)
                                 GpxShare.share(context, name, GpxWriter.writeRoute(name, route!!.points))
                             }) { Text("GPX teilen") }
                         }
@@ -338,29 +383,48 @@ fun PlanScreen() {
 
     val currentRoute = route
     if (showSaveDialog && currentRoute != null) {
+        val editing = editingRoute
         SaveRouteDialog(
-            initialName = defaultRouteName(tourType),
+            initialName = editing?.name ?: defaultRouteName(tourType),
+            canOverwrite = editing != null,
             onDismiss = { showSaveDialog = false },
-            onSave = { name ->
+            onSave = { name, asNew ->
                 showSaveDialog = false
-                val waypointsJson = waypoints.joinToString(",", "[", "]") { "[${it.latitude},${it.longitude}]" }
+                val snapshot = waypoints.toList() to tourType
+                val waypointsJson = snapshot.first.joinToString(",", "[", "]") { "[${it.latitude},${it.longitude}]" }
+                val overwrite = editing != null && !asNew
+                val data = PlannedRoute(
+                    id = if (overwrite) editing!!.id else 0,
+                    name = name,
+                    type = tourType,
+                    createdAt = if (overwrite) editing!!.createdAt else System.currentTimeMillis(),
+                    waypointsJson = waypointsJson,
+                    distanceMeters = currentRoute.distanceMeters.toFloat(),
+                    ascentMeters = currentRoute.ascentMeters,
+                    estimatedDurationSeconds = currentRoute.durationSeconds.toLong(),
+                    gpxData = GpxWriter.writeRoute(name, currentRoute.points),
+                    notes = editing?.notes ?: "",
+                )
                 scope.launch {
-                    container.plannedRouteDao.insertPlannedRoute(
-                        PlannedRoute(
-                            name = name,
-                            type = tourType,
-                            createdAt = System.currentTimeMillis(),
-                            waypointsJson = waypointsJson,
-                            distanceMeters = currentRoute.distanceMeters.toFloat(),
-                            ascentMeters = currentRoute.ascentMeters,
-                            estimatedDurationSeconds = currentRoute.durationSeconds.toLong(),
-                            gpxData = GpxWriter.writeRoute(name, currentRoute.points),
-                        )
-                    )
-                    isSaved = true
+                    editingRoute = if (overwrite) {
+                        container.plannedRouteDao.updatePlannedRoute(data)
+                        data
+                    } else {
+                        data.copy(id = container.plannedRouteDao.insertPlannedRoute(data))
+                    }
+                    savedState = snapshot
                 }
             },
         )
+    }
+}
+
+/** Parses the stored "[[lat,lon],…]" waypoint list. */
+private fun parseWaypoints(json: String): List<GeoPoint> {
+    val array = JSONArray(json)
+    return (0 until array.length()).map { i ->
+        val pair = array.getJSONArray(i)
+        GeoPoint(pair.getDouble(0), pair.getDouble(1))
     }
 }
 
@@ -373,8 +437,9 @@ private fun pointLabel(index: Int, count: Int): String = when (index) {
 @Composable
 private fun SaveRouteDialog(
     initialName: String,
+    canOverwrite: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (name: String, asNew: Boolean) -> Unit,
 ) {
     var name by remember { mutableStateOf(initialName) }
     AlertDialog(
@@ -389,11 +454,26 @@ private fun SaveRouteDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) {
-                Text("Speichern")
+            if (canOverwrite) {
+                // Three actions don't fit side by side — stack them, right-aligned.
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { onSave(name.trim(), false) }, enabled = name.isNotBlank()) {
+                        Text("Überschreiben")
+                    }
+                    TextButton(onClick = { onSave(name.trim(), true) }, enabled = name.isNotBlank()) {
+                        Text("Als neue Route speichern")
+                    }
+                    TextButton(onClick = onDismiss) { Text("Abbrechen") }
+                }
+            } else {
+                TextButton(onClick = { onSave(name.trim(), false) }, enabled = name.isNotBlank()) {
+                    Text("Speichern")
+                }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+        dismissButton = if (canOverwrite) null else {
+            { TextButton(onClick = onDismiss) { Text("Abbrechen") } }
+        },
     )
 }
 

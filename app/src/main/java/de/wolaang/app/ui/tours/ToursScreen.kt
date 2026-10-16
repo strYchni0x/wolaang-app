@@ -47,10 +47,12 @@ private data class ListEntry(
     val date: Long,
     val gpx: String,
     val delete: suspend () -> Unit,
+    /** Opens the entry on the map; null where that isn't supported yet (recorded tours). */
+    val open: (() -> Unit)? = null,
 )
 
 @Composable
-fun ToursScreen() {
+fun ToursScreen(onOpenPlan: () -> Unit) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as WolaangApp).container }
     val tours by container.tourDao.getAllTours().collectAsStateWithLifecycle(initialValue = emptyList())
@@ -74,6 +76,10 @@ fun ToursScreen() {
             date = r.createdAt,
             gpx = r.gpxData,
             delete = { container.plannedRouteDao.deletePlannedRoute(r.id) },
+            open = {
+                container.routeToOpen.value = r.id
+                onOpenPlan()
+            },
         )
     }
     val tourEntries = tours.map { t ->
@@ -141,11 +147,10 @@ private fun SectionHeader(text: String) {
 
 @Composable
 private fun EntryCard(entry: ListEntry, onShare: () -> Unit, onDelete: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-    ) {
+    val cardModifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 6.dp)
+    val content: @Composable () -> Unit = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f).padding(16.dp)) {
                 Text(entry.name, style = MaterialTheme.typography.titleMedium)
@@ -159,5 +164,11 @@ private fun EntryCard(entry: ListEntry, onShare: () -> Unit, onDelete: () -> Uni
                 Icon(Icons.Default.Delete, contentDescription = "Löschen")
             }
         }
+    }
+    val open = entry.open
+    if (open != null) {
+        Card(onClick = open, modifier = cardModifier) { content() }
+    } else {
+        Card(modifier = cardModifier) { content() }
     }
 }

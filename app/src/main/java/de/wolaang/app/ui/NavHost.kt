@@ -37,6 +37,14 @@ fun WolaangNavHost() {
 
     val items = listOf(Screen.Map, Screen.Tours, Screen.Plan)
 
+    fun navigateTo(screen: Screen) {
+        navController.navigate(screen.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -54,13 +62,7 @@ fun WolaangNavHost() {
                         },
                         label = { Text(screen.label) },
                         selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
+                        onClick = { navigateTo(screen) }
                     )
                 }
             }
@@ -72,7 +74,7 @@ fun WolaangNavHost() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Map.route) { MapScreen() }
-            composable(Screen.Tours.route) { ToursScreen() }
+            composable(Screen.Tours.route) { ToursScreen(onOpenPlan = { navigateTo(Screen.Plan) }) }
             composable(Screen.Plan.route) { PlanScreen() }
         }
     }

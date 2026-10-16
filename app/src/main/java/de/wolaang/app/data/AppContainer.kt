@@ -7,6 +7,7 @@ import de.wolaang.app.data.db.TourDao
 import de.wolaang.app.data.db.WolaangDatabase
 import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.tracking.TrackRecorder
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Simple manual dependency container.
@@ -28,4 +29,7 @@ class AppContainer(context: Context) {
 
     /** Offline route planning (BRouter). */
     val offlineRouter: OfflineRouter = OfflineRouter(context)
+
+    /** Id of a saved planned route the Plan tab should open next (set by the Tours tab). */
+    val routeToOpen = MutableStateFlow<Long?>(null)
 }
