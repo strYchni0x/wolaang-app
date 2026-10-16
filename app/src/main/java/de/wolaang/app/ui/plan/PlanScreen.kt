@@ -18,16 +18,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -54,20 +55,21 @@ import de.wolaang.app.data.model.PlannedRoute
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RouteResult
 import de.wolaang.app.ui.map.bestLastKnownLocation
+import de.wolaang.app.ui.map.setDarkTiles
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.json.JSONArray
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
 private val NAME_DATE_FORMAT = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
@@ -117,6 +119,10 @@ fun PlanScreen() {
             controller.setCenter(GERMANY_CENTER)
         }
     }
+
+    // Darken the map tiles together with the app's dark design.
+    val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    LaunchedEffect(darkMap) { mapView.setDarkTiles(darkMap) }
 
     val routePolyline = remember {
         Polyline().apply {

@@ -12,6 +12,7 @@ import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,9 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Box
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -44,13 +45,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
 import de.wolaang.app.tracking.TrackingService
+import java.util.Locale
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-import java.util.Locale
 
 // Roughly the geographic center of Germany — used until we get a GPS fix.
 private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
@@ -108,6 +109,10 @@ fun MapScreen() {
             controller.setCenter(GERMANY_CENTER)
         }
     }
+
+    // Darken the map tiles together with the app's dark design.
+    val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    LaunchedEffect(darkMap) { mapView.setDarkTiles(darkMap) }
 
     val locationOverlay = remember {
         MyLocationNewOverlay(GpsMyLocationProvider(context), mapView)
