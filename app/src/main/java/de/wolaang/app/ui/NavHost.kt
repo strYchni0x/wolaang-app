@@ -78,7 +78,10 @@ fun WolaangNavHost() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Map.route) { MapScreen() }
-            composable(Screen.Tours.route) { ToursScreen(onOpenPlan = { navigateTo(Screen.Plan) }) }
+            composable(Screen.Tours.route) { ToursScreen(
+                    onOpenPlan = { navigateTo(Screen.Plan) },
+                    onOpenMap = { navigateTo(Screen.Map) },
+                ) }
             composable(Screen.Plan.route) { PlanScreen() }
             composable(Screen.Settings.route) { SettingsScreen() }
         }

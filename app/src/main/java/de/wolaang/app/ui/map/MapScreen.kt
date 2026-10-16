@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,17 +46,30 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
+import de.wolaang.app.data.GpxReader
+import de.wolaang.app.data.model.Tour
+import de.wolaang.app.data.model.TourType
+import de.wolaang.app.routing.RoutePoint
 import de.wolaang.app.tracking.TrackingService
+import de.wolaang.app.ui.plan.ElevationProfileCard
+import de.wolaang.app.ui.plan.ProfileSample
+import de.wolaang.app.ui.plan.WaypointIcons
+import de.wolaang.app.ui.plan.buildProfile
 import java.util.Locale
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 // Roughly the geographic center of Germany — used until we get a GPS fix.
 private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
+
+// Line color of a shown recorded tour (distinct from the red live track and blue plans).
+private val TOUR_COLOR = Color.parseColor("#7B1FA2")
 
 // Accuracy (meters) at or below which we consider the fix "good" and hide the status hint.
 private const val GOOD_ACCURACY_M = 20f
@@ -76,7 +91,8 @@ internal fun bestLastKnownLocation(lm: LocationManager): Location? =
 fun MapScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val recorder = remember { (context.applicationContext as WolaangApp).container.trackRecorder }
+    val container = remember { (context.applicationContext as WolaangApp).container }
+    val recorder = container.trackRecorder
     val recordingState by recorder.state.collectAsStateWithLifecycle()
 
     var hasLocationPermission by remember {
@@ -125,6 +141,25 @@ fun MapScreen() {
         }
     }
 
+    // A recorded tour opened from the Tours tab, shown as a purple line with start/end pins.
+    var shownTour by remember { mutableStateOf<Tour?>(null) }
+    var shownPoints by remember { mutableStateOf<List<RoutePoint>>(emptyList()) }
+    var scrubSample by remember { mutableStateOf<ProfileSample?>(null) }
+    val tourPolyline = remember {
+        Polyline().apply {
+            outlinePaint.color = TOUR_COLOR
+            outlinePaint.strokeWidth = 12f
+        }
+    }
+    val tourMarkers = remember { mutableListOf<Marker>() }
+    val scrubMarker = remember {
+        Marker(mapView).apply {
+            icon = WaypointIcons.dot(context, TOUR_COLOR)
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            setOnMarkerClickListener { _, _ -> true }
+        }
+    }
+
     // Ask for the permissions we need on first entry.
     LaunchedEffect(Unit) {
         val needed = buildList {
@@ -142,9 +177,12 @@ fun MapScreen() {
         var listener: LocationListener? = null
         var lm: LocationManager? = null
 
+        // A tour requested from the Tours tab is loaded right after this effect; don't let
+        // follow-location or the last-known position pull the map away from it meanwhile.
+        val tourRequested = shownTour != null || container.tourToShow.value != null
         if (hasLocationPermission) {
             locationOverlay.enableMyLocation()
-            locationOverlay.enableFollowLocation()
+            if (!tourRequested) locationOverlay.enableFollowLocation()
             if (locationOverlay !in mapView.overlays) {
                 mapView.overlays.add(locationOverlay)
             }
@@ -156,8 +194,10 @@ fun MapScreen() {
             // center of Germany while waiting for the first fresh fix.
             bestLastKnownLocation(manager)?.let { last ->
                 currentLocation = last
-                mapView.controller.setZoom(14.0)
-                mapView.controller.setCenter(GeoPoint(last.latitude, last.longitude))
+                if (!tourRequested) {
+                    mapView.controller.setZoom(14.0)
+                    mapView.controller.setCenter(GeoPoint(last.latitude, last.longitude))
+                }
             }
 
             // (2)+(3) Live fixes for the accuracy hint. NETWORK_PROVIDER yields a
@@ -186,7 +226,7 @@ fun MapScreen() {
 
             // Zoom in once we have a precise GPS fix.
             locationOverlay.runOnFirstFix {
-                locationOverlay.myLocation?.let { fix ->
+                locationOverlay.myLocation?.takeIf { !tourRequested && shownTour == null }?.let { fix ->
                     mapView.post {
                         mapView.controller.setZoom(16.0)
                         mapView.controller.animateTo(fix)
@@ -199,6 +239,57 @@ fun MapScreen() {
             locationOverlay.disableMyLocation()
             listener?.let { l -> lm?.removeUpdates(l) }
         }
+    }
+
+    // Show a recorded tour when the Tours tab asks for it.
+    LaunchedEffect(Unit) {
+        container.tourToShow.collect { id ->
+            if (id == null) return@collect
+            container.tourToShow.value = null
+            val tour = container.tourDao.getTourById(id) ?: return@collect
+            locationOverlay.disableFollowLocation()
+            shownPoints = GpxReader.readTrack(tour.gpxData)
+            shownTour = tour
+        }
+    }
+
+    LaunchedEffect(shownPoints) {
+        mapView.overlays.remove(tourPolyline)
+        mapView.overlays.removeAll(tourMarkers)
+        tourMarkers.clear()
+        val points = shownPoints.map { GeoPoint(it.lat, it.lon) }
+        if (points.size >= 2) {
+            tourPolyline.setPoints(points)
+            mapView.overlays.add(0, tourPolyline)
+            listOf(0 to points.first(), 1 to points.last()).forEach { (i, p) ->
+                tourMarkers.add(Marker(mapView).apply {
+                    position = p
+                    icon = WaypointIcons.forIndex(context, i, 2)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    setOnMarkerClickListener { _, _ -> true }
+                })
+            }
+            mapView.overlays.addAll(tourMarkers)
+            // Leave room for the info card on top and the profile + button below.
+            val box = BoundingBox.fromGeoPointsSafe(points)
+            val padded = BoundingBox(
+                box.latNorth + box.latitudeSpan * 0.4,
+                box.lonEast + box.longitudeSpanWithDateLine * 0.1,
+                box.latSouth - box.latitudeSpan * 1.3,
+                box.lonWest - box.longitudeSpanWithDateLine * 0.1,
+            )
+            mapView.post { mapView.zoomToBoundingBox(padded, false, 60) }
+        }
+        mapView.invalidate()
+    }
+
+    LaunchedEffect(scrubSample) {
+        mapView.overlays.remove(scrubMarker)
+        scrubSample?.let {
+            scrubMarker.position = GeoPoint(it.point.lat, it.point.lon)
+            mapView.overlays.add(scrubMarker)
+        }
+        mapView.invalidate()
     }
 
     // Redraw the live track polyline whenever the recorded points change.
@@ -238,6 +329,23 @@ fun MapScreen() {
                     .padding(12.dp)
                     .fillMaxWidth(),
             )
+        } else if (shownTour != null) {
+            TourInfoCard(
+                tour = shownTour!!,
+                onClose = {
+                    shownTour = null
+                    shownPoints = emptyList()
+                    scrubSample = null
+                    if (hasLocationPermission) {
+                        locationOverlay.enableFollowLocation()
+                        locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(12.dp)
+                    .fillMaxWidth(),
+            )
         } else {
             // Show a "searching / improving" hint until the fix is accurate enough.
             val accuracy = currentLocation?.accuracy
@@ -250,6 +358,20 @@ fun MapScreen() {
                         .fillMaxWidth(),
                 )
             }
+        }
+
+        if (shownTour != null) {
+            val profile = remember(shownPoints) { buildProfile(shownPoints) }
+            ElevationProfileCard(
+                samples = profile,
+                onScrub = { scrubSample = it },
+                lineColor = ComposeColor(TOUR_COLOR),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    // Sits above the record button.
+                    .padding(start = 12.dp, end = 12.dp, bottom = 88.dp)
+                    .fillMaxWidth(),
+            )
         }
 
         ExtendedFloatingActionButton(
@@ -288,6 +410,33 @@ private fun AndroidViewMap(mapView: MapView) {
         factory = { mapView },
         modifier = Modifier.fillMaxSize(),
     )
+}
+
+@Composable
+private fun TourInfoCard(tour: Tour, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    Card(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f).padding(start = 16.dp, top = 12.dp, bottom = 12.dp)) {
+                Text(tour.name, style = MaterialTheme.typography.titleMedium)
+                val kind = if (tour.type == TourType.BIKE) "Rad" else "Wandern"
+                Text(
+                    String.format(
+                        Locale.GERMANY,
+                        "%s · %.1f km · %d:%02d h · %d m ↑",
+                        kind,
+                        tour.distanceMeters / 1000.0,
+                        tour.durationSeconds / 3600,
+                        (tour.durationSeconds % 3600) / 60,
+                        tour.elevationGainMeters.toInt(),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Clear, contentDescription = "Tour ausblenden")
+            }
+        }
+    }
 }
 
 @Composable

@@ -35,4 +35,7 @@ class AppContainer(context: Context) {
 
     /** Id of a saved planned route the Plan tab should open next (set by the Tours tab). */
     val routeToOpen = MutableStateFlow<Long?>(null)
+
+    /** Id of a recorded tour the Map tab should show next (set by the Tours tab). */
+    val tourToShow = MutableStateFlow<Long?>(null)
 }

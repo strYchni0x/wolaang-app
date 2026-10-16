@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -72,6 +73,7 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
 private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
+private val ROUTE_COLOR = Color.parseColor("#1565C0")
 private val NAME_DATE_FORMAT = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
 
 private fun defaultRouteName(type: TourType): String =
@@ -127,7 +129,7 @@ fun PlanScreen() {
     // Marks the spot the finger is on in the elevation profile.
     val scrubMarker = remember {
         Marker(mapView).apply {
-            icon = WaypointIcons.dot(context, Color.parseColor("#1565C0"))
+            icon = WaypointIcons.dot(context, ROUTE_COLOR)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             setOnMarkerClickListener { _, _ -> true }
         }
@@ -136,7 +138,7 @@ fun PlanScreen() {
 
     val routePolyline = remember {
         Polyline().apply {
-            outlinePaint.color = Color.parseColor("#1565C0")
+            outlinePaint.color = ROUTE_COLOR
             outlinePaint.strokeWidth = 12f
         }
     }
@@ -412,6 +414,7 @@ fun PlanScreen() {
             ElevationProfileCard(
                 samples = profile,
                 onScrub = { scrubSample = it },
+                lineColor = ComposeColor(ROUTE_COLOR),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(12.dp)

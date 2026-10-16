@@ -47,12 +47,12 @@ private data class ListEntry(
     val date: Long,
     val gpx: String,
     val delete: suspend () -> Unit,
-    /** Opens the entry on the map; null where that isn't supported yet (recorded tours). */
+    /** Opens the entry on the map (planned routes in the Plan tab, recorded tours in the Map tab). */
     val open: (() -> Unit)? = null,
 )
 
 @Composable
-fun ToursScreen(onOpenPlan: () -> Unit) {
+fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as WolaangApp).container }
     val tours by container.tourDao.getAllTours().collectAsStateWithLifecycle(initialValue = emptyList())
@@ -90,6 +90,10 @@ fun ToursScreen(onOpenPlan: () -> Unit) {
             date = t.startedAt,
             gpx = t.gpxData,
             delete = { container.tourDao.deleteTour(t.id) },
+            open = {
+                container.tourToShow.value = t.id
+                onOpenMap()
+            },
         )
     }
 

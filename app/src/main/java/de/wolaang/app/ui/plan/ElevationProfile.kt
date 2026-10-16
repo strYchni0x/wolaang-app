@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -63,11 +64,12 @@ fun ElevationProfileCard(
     samples: List<ProfileSample>,
     onScrub: (ProfileSample?) -> Unit,
     modifier: Modifier = Modifier,
+    // Same color as the route line on the map, so both read as one thing.
+    lineColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     if (samples.size < 2) return
     var scrubbed by remember(samples) { mutableStateOf<ProfileSample?>(null) }
 
-    val lineColor = MaterialTheme.colorScheme.primary
     val fillColor = lineColor.copy(alpha = 0.18f)
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
