@@ -32,6 +32,21 @@ object WaypointIcons {
         else -> icon(context, VIA_COLOR, index.toString())
     }
 
+    /** Small dot with a white ring, marking the spot touched in the elevation profile. */
+    fun dot(context: Context, fill: Int): BitmapDrawable {
+        val density = context.resources.displayMetrics.density
+        val size = (16 * density).toInt()
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val center = size / 2f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = Color.WHITE
+        canvas.drawCircle(center, center, center, paint)
+        paint.color = fill
+        canvas.drawCircle(center, center, center - 3 * density, paint)
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
     private fun icon(context: Context, fill: Int, label: String): BitmapDrawable {
         val density = context.resources.displayMetrics.density
         val width = (WIDTH_DP * density).toInt()

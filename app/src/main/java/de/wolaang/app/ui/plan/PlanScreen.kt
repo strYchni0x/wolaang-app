@@ -124,6 +124,16 @@ fun PlanScreen() {
     val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.5f
     LaunchedEffect(darkMap) { mapView.setDarkTiles(darkMap) }
 
+    // Marks the spot the finger is on in the elevation profile.
+    val scrubMarker = remember {
+        Marker(mapView).apply {
+            icon = WaypointIcons.dot(context, Color.parseColor("#1565C0"))
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            setOnMarkerClickListener { _, _ -> true }
+        }
+    }
+    var scrubSample by remember { mutableStateOf<ProfileSample?>(null) }
+
     val routePolyline = remember {
         Polyline().apply {
             outlinePaint.color = Color.parseColor("#1565C0")
@@ -160,7 +170,7 @@ fun PlanScreen() {
 
     // Draw waypoint markers. Long-press + drag moves a point, a tap selects it.
     LaunchedEffect(waypoints.toList(), selectedIndex) {
-        mapView.overlays.removeAll { it is Marker }
+        mapView.overlays.removeAll { it is Marker && it !== scrubMarker }
         waypoints.forEachIndexed { i, p ->
             mapView.overlays.add(Marker(mapView).apply {
                 position = p
@@ -230,6 +240,18 @@ fun PlanScreen() {
         }
     }
 
+    LaunchedEffect(scrubSample) {
+        val s = scrubSample
+        mapView.overlays.remove(scrubMarker)
+        if (s != null) {
+            scrubMarker.position = GeoPoint(s.point.lat, s.point.lon)
+            // Above the route line but below the waypoint pins, so it never hides their labels.
+            val pinIndex = mapView.overlays.indexOfFirst { it is Marker }
+            if (pinIndex >= 0) mapView.overlays.add(pinIndex, scrubMarker) else mapView.overlays.add(scrubMarker)
+        }
+        mapView.invalidate()
+    }
+
     // Draw the computed route.
     LaunchedEffect(route) {
         val r = route
@@ -241,15 +263,15 @@ fun PlanScreen() {
             if (routePolyline !in mapView.overlays) mapView.overlays.add(1, routePolyline)
             if (zoomToRoute) {
                 zoomToRoute = false
-                // The info card covers roughly the top third of the map, so extend the box
-                // northwards to keep the whole route (and the pins) below it.
+                // The info card covers roughly the top third of the map and the elevation
+                // profile the bottom fifth, so extend the box to keep the route between them.
                 val box = BoundingBox.fromGeoPointsSafe(points + waypoints)
                 val latSpan = box.latitudeSpan
                 val lonSpan = box.longitudeSpanWithDateLine
                 val padded = BoundingBox(
                     box.latNorth + latSpan * 0.7,
                     box.lonEast + lonSpan * 0.1,
-                    box.latSouth - latSpan * 0.1,
+                    box.latSouth - latSpan * 0.5,
                     box.lonWest - lonSpan * 0.1,
                 )
                 // Post, so the MapView has its final size.
@@ -384,6 +406,17 @@ fun PlanScreen() {
                     else -> Text("Tippe auf die Karte, um das Ziel zu setzen.")
                 }
             }
+        }
+        val profile = remember(route) { route?.let { buildProfile(it.points) } ?: emptyList() }
+        if (route != null && selectedIndex == null) {
+            ElevationProfileCard(
+                samples = profile,
+                onScrub = { scrubSample = it },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(12.dp)
+                    .fillMaxWidth(),
+            )
         }
     }
 
