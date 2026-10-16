@@ -1,6 +1,7 @@
 package de.wolaang.app.data
 
 import android.content.Context
+import de.wolaang.app.data.model.TourType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +25,15 @@ class AppSettings(context: Context) {
         _themeMode.value = mode
     }
 
+    /** Activity type chosen for the last recording; preselected next time. */
+    var lastRecordingType: TourType
+        get() = prefs.getString(KEY_LAST_RECORDING_TYPE, null)
+            ?.let { runCatching { TourType.valueOf(it) }.getOrNull() }
+            ?: TourType.HIKE
+        set(value) = prefs.edit().putString(KEY_LAST_RECORDING_TYPE, value.name).apply()
+
     private companion object {
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_LAST_RECORDING_TYPE = "last_recording_type"
     }
 }

@@ -51,16 +51,20 @@ class TrackingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startRecording()
+            ACTION_START -> startRecording(
+                intent.getStringExtra(EXTRA_TYPE)
+                    ?.let { runCatching { TourType.valueOf(it) }.getOrNull() }
+                    ?: TourType.HIKE
+            )
             ACTION_STOP -> stopRecording()
         }
         return START_STICKY
     }
 
-    private fun startRecording() {
+    private fun startRecording(type: TourType) {
+        recorder.start(type)
         createChannel()
         startForegroundCompat()
-        recorder.start()
 
         val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         locationManager = lm
@@ -79,12 +83,13 @@ class TrackingService : Service() {
 
         serviceScope.launch {
             if (finished.points.size >= 2) {
-                val name = "Tour " + DATE_FORMAT.format(Date(finished.startedAt))
+                val kind = if (finished.type == TourType.BIKE) "Radtour" else "Wanderung"
+                val name = "$kind " + DATE_FORMAT.format(Date(finished.startedAt))
                 val now = System.currentTimeMillis()
                 tourDao.insertTour(
                     Tour(
                         name = name,
-                        type = TourType.HIKE,
+                        type = finished.type,
                         startedAt = finished.startedAt,
                         finishedAt = now,
                         distanceMeters = finished.distanceMeters,
@@ -136,7 +141,8 @@ class TrackingService : Service() {
     private fun formatStats(): String {
         val s = recorder.state.value
         val km = s.distanceMeters / 1000.0
-        return String.format(Locale.GERMANY, "%.2f km · %d m ↑", km, s.elevationGainMeters.toInt())
+        val kind = if (s.type == TourType.BIKE) "Rad" else "Wandern"
+        return String.format(Locale.GERMANY, "%s · %.2f km · %d m ↑", kind, km, s.elevationGainMeters.toInt())
     }
 
     private fun createChannel() {
@@ -152,6 +158,7 @@ class TrackingService : Service() {
     companion object {
         const val ACTION_START = "de.wolaang.app.action.START"
         const val ACTION_STOP = "de.wolaang.app.action.STOP"
+        private const val EXTRA_TYPE = "type"
 
         private const val CHANNEL_ID = "tracking"
         private const val NOTIF_ID = 1
@@ -161,8 +168,10 @@ class TrackingService : Service() {
 
         private val DATE_FORMAT = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY)
 
-        fun start(context: Context) {
-            val intent = Intent(context, TrackingService::class.java).setAction(ACTION_START)
+        fun start(context: Context, type: TourType) {
+            val intent = Intent(context, TrackingService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_TYPE, type.name)
             ContextCompat.startForegroundService(context, intent)
         }
 

@@ -1,6 +1,7 @@
 package de.wolaang.app.tracking
 
 import android.location.Location
+import de.wolaang.app.data.model.TourType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,7 @@ data class RecordingState(
     val distanceMeters: Float = 0f,
     val elevationGainMeters: Float = 0f,
     val startedAt: Long = 0L,
+    val type: TourType = TourType.HIKE,
 )
 
 /**
@@ -29,8 +31,8 @@ class TrackRecorder {
     private val _state = MutableStateFlow(RecordingState())
     val state: StateFlow<RecordingState> = _state.asStateFlow()
 
-    fun start() {
-        _state.value = RecordingState(isRecording = true, startedAt = System.currentTimeMillis())
+    fun start(type: TourType) {
+        _state.value = RecordingState(isRecording = true, startedAt = System.currentTimeMillis(), type = type)
     }
 
     fun addPoint(location: Location) {

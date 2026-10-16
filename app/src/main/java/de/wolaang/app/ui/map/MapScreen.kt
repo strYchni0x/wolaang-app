@@ -21,12 +21,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -159,6 +163,8 @@ fun MapScreen() {
             setOnMarkerClickListener { _, _ -> true }
         }
     }
+
+    var showRecordingTypeDialog by remember { mutableStateOf(false) }
 
     // Ask for the permissions we need on first entry.
     LaunchedEffect(Unit) {
@@ -322,6 +328,7 @@ fun MapScreen() {
 
         if (recordingState.isRecording) {
             StatsCard(
+                type = recordingState.type,
                 distanceMeters = recordingState.distanceMeters,
                 elevationGainMeters = recordingState.elevationGainMeters,
                 modifier = Modifier
@@ -379,7 +386,7 @@ fun MapScreen() {
                 if (recordingState.isRecording) {
                     TrackingService.stop(context)
                 } else if (hasLocationPermission) {
-                    TrackingService.start(context)
+                    showRecordingTypeDialog = true
                 } else {
                     permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                 }
@@ -402,6 +409,44 @@ fun MapScreen() {
                 .padding(16.dp),
         )
     }
+
+    if (showRecordingTypeDialog) {
+        RecordingTypeDialog(
+            preselected = container.settings.lastRecordingType,
+            onDismiss = { showRecordingTypeDialog = false },
+            onStart = { type ->
+                showRecordingTypeDialog = false
+                container.settings.lastRecordingType = type
+                TrackingService.start(context, type)
+            },
+        )
+    }
+}
+
+/** Asks what is being recorded; the last choice is the highlighted (filled) button. */
+@Composable
+private fun RecordingTypeDialog(
+    preselected: TourType,
+    onDismiss: () -> Unit,
+    onStart: (TourType) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Aufzeichnung starten") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(TourType.HIKE to "Wandern", TourType.BIKE to "Rad").forEach { (type, label) ->
+                    if (type == preselected) {
+                        Button(onClick = { onStart(type) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { onStart(type) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+    )
 }
 
 @Composable
@@ -458,6 +503,7 @@ private fun GpsStatusCard(accuracyMeters: Float?, modifier: Modifier = Modifier)
 
 @Composable
 private fun StatsCard(
+    type: TourType,
     distanceMeters: Float,
     elevationGainMeters: Float,
     modifier: Modifier = Modifier,
@@ -469,6 +515,7 @@ private fun StatsCard(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
+            Text(if (type == TourType.BIKE) "Rad" else "Wandern")
             Text(String.format(Locale.GERMANY, "%.2f km", distanceMeters / 1000.0))
             Text(String.format(Locale.GERMANY, "%d m ↑", elevationGainMeters.toInt()))
         }
