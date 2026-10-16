@@ -59,6 +59,9 @@ dependencies {
     // Map
     implementation(libs.osmdroid.android)
 
+    // Offline routing: BRouter 1.7.10 routing-only jar (MIT, see libs/BROUTER-LICENSE.txt)
+    implementation(files("libs/brouter-1.7.10-ro.jar"))
+
     // Database
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

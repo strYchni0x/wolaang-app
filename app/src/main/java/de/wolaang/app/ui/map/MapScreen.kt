@@ -59,7 +59,7 @@ private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
 private const val GOOD_ACCURACY_M = 20f
 
 /** Most recent last-known location across GPS and network providers, or null. */
-private fun bestLastKnownLocation(lm: LocationManager): Location? =
+internal fun bestLastKnownLocation(lm: LocationManager): Location? =
     listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         .filter { it in lm.allProviders }
         .mapNotNull { provider ->

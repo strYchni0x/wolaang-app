@@ -5,6 +5,7 @@ import androidx.room.Room
 import de.wolaang.app.data.db.PlannedRouteDao
 import de.wolaang.app.data.db.TourDao
 import de.wolaang.app.data.db.WolaangDatabase
+import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.tracking.TrackRecorder
 
 /**
@@ -24,4 +25,7 @@ class AppContainer(context: Context) {
 
     /** Shared live state of the current recording (written by TrackingService). */
     val trackRecorder: TrackRecorder = TrackRecorder()
+
+    /** Offline route planning (BRouter). */
+    val offlineRouter: OfflineRouter = OfflineRouter(context)
 }

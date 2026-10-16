@@ -1,16 +1,296 @@
 package de.wolaang.app.ui.plan
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.location.LocationManager
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import de.wolaang.app.WolaangApp
+import de.wolaang.app.data.model.TourType
+import de.wolaang.app.routing.RouteResult
+import de.wolaang.app.ui.map.bestLastKnownLocation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.MapEventsOverlay
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
+import java.util.Locale
 
-// TODO: Route planning UI with waypoint selection on OSM map
+private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
+
+/**
+ * Route planning: tap the map to add waypoints (start, optional via points, destination).
+ * As soon as there are two points the route is computed offline with BRouter.
+ */
 @Composable
 fun PlanScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Tour planen")
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val router = remember { (context.applicationContext as WolaangApp).container.offlineRouter }
+    val scope = rememberCoroutineScope()
+
+    val waypoints = remember { mutableStateListOf<GeoPoint>() }
+    var tourType by remember { mutableStateOf(TourType.HIKE) }
+    var route by remember { mutableStateOf<RouteResult?>(null) }
+    var isRouting by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var missingSegments by remember { mutableStateOf<List<String>>(emptyList()) }
+    var downloadProgress by remember { mutableStateOf<Float?>(null) }
+    // Bumped after a tile download so routing is retried.
+    var segmentsVersion by remember { mutableIntStateOf(0) }
+
+    val mapView = remember {
+        MapView(context).apply {
+            setTileSource(TileSourceFactory.MAPNIK)
+            setTilesScaledToDpi(true)
+            setTilesScaleFactor(1.4f)
+            setMultiTouchControls(true)
+            controller.setZoom(6.0)
+            controller.setCenter(GERMANY_CENTER)
+        }
     }
+
+    val routePolyline = remember {
+        Polyline().apply {
+            outlinePaint.color = Color.parseColor("#1565C0")
+            outlinePaint.strokeWidth = 12f
+        }
+    }
+
+    // Start near the user, if we already know where they are.
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            bestLastKnownLocation(lm)?.let {
+                mapView.controller.setZoom(14.0)
+                mapView.controller.setCenter(GeoPoint(it.latitude, it.longitude))
+            }
+        }
+    }
+
+    // Taps on the map add waypoints.
+    DisposableEffect(Unit) {
+        val tapOverlay = MapEventsOverlay(object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                waypoints.add(p)
+                return true
+            }
+
+            override fun longPressHelper(p: GeoPoint): Boolean = false
+        })
+        mapView.overlays.add(0, tapOverlay)
+        onDispose { mapView.overlays.remove(tapOverlay) }
+    }
+
+    // Draw waypoint markers.
+    LaunchedEffect(waypoints.toList()) {
+        mapView.overlays.removeAll { it is Marker }
+        waypoints.forEachIndexed { i, p ->
+            mapView.overlays.add(Marker(mapView).apply {
+                position = p
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = when (i) {
+                    0 -> "Start"
+                    waypoints.lastIndex -> "Ziel"
+                    else -> "Zwischenpunkt $i"
+                }
+                setOnMarkerClickListener { _, _ -> true } // no info bubble
+            })
+        }
+        mapView.invalidate()
+    }
+
+    // (Re)compute the route whenever waypoints, profile or available tiles change.
+    LaunchedEffect(waypoints.toList(), tourType, segmentsVersion) {
+        errorText = null
+        route = null
+        val pts = waypoints.map { it.latitude to it.longitude }
+        if (pts.size < 2) {
+            missingSegments = emptyList()
+            return@LaunchedEffect
+        }
+        missingSegments = router.missingSegments(pts)
+        if (missingSegments.isNotEmpty()) return@LaunchedEffect
+
+        isRouting = true
+        try {
+            route = router.route(pts, tourType)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            errorText = e.message ?: e.toString()
+        } finally {
+            isRouting = false
+        }
+    }
+
+    // Draw the computed route.
+    LaunchedEffect(route) {
+        val r = route
+        if (r == null) {
+            mapView.overlays.remove(routePolyline)
+        } else {
+            routePolyline.setPoints(r.points.map { GeoPoint(it.lat, it.lon) })
+            if (routePolyline !in mapView.overlays) mapView.overlays.add(1, routePolyline)
+        }
+        mapView.invalidate()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onDetach()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+
+        Card(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(12.dp)
+                .fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = tourType == TourType.HIKE,
+                        onClick = { tourType = TourType.HIKE },
+                        label = { Text("Wandern") },
+                    )
+                    FilterChip(
+                        selected = tourType == TourType.BIKE,
+                        onClick = { tourType = TourType.BIKE },
+                        label = { Text("Rad") },
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (waypoints.isNotEmpty()) {
+                        IconButton(onClick = { waypoints.clear() }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Route löschen")
+                        }
+                    }
+                }
+
+                val progress = downloadProgress
+                when {
+                    progress != null -> {
+                        Text("Routing-Daten werden geladen… ${(progress * 100).toInt()} %")
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    }
+                    missingSegments.isNotEmpty() -> {
+                        errorText?.let { Text("Fehler: $it", color = MaterialTheme.colorScheme.error) }
+                        Text(
+                            "Für diese Region fehlen Routing-Daten (${missingSegments.joinToString()}, " +
+                                "je ca. 50–200 MB). Einmal herunterladen, danach geht das Planen offline."
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = {
+                            scope.launch {
+                                try {
+                                    for ((i, name) in missingSegments.withIndex()) {
+                                        router.downloadSegment(name) { p ->
+                                            downloadProgress = (i + p) / missingSegments.size
+                                        }
+                                    }
+                                    segmentsVersion++
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    errorText = e.message ?: e.toString()
+                                } finally {
+                                    downloadProgress = null
+                                }
+                            }
+                        }) { Text("Herunterladen") }
+                    }
+                    isRouting -> Text("Route wird berechnet…")
+                    errorText != null -> Text(
+                        "Fehler: $errorText",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    route != null -> RouteSummary(route!!)
+                    waypoints.isEmpty() -> Text("Tippe auf die Karte, um den Start zu setzen.")
+                    else -> Text("Tippe auf die Karte, um das Ziel zu setzen.")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RouteSummary(route: RouteResult) {
+    val h = route.durationSeconds / 3600
+    val m = (route.durationSeconds % 3600) / 60
+    Text(
+        String.format(
+            Locale.GERMANY,
+            "%.1f km  ·  %d m ↑  ·  %d:%02d h",
+            route.distanceMeters / 1000.0,
+            route.ascentMeters,
+            h,
+            m,
+        ),
+        style = MaterialTheme.typography.titleMedium,
+    )
+    Text(
+        "Weiteres Tippen fügt Punkte hinzu.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
