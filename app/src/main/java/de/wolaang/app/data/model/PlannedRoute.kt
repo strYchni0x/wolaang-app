@@ -9,8 +9,10 @@ data class PlannedRoute(
     val name: String,
     val type: TourType,
     val createdAt: Long,
-    val waypointsJson: String,  // JSON array of lat/lon pairs
+    val waypointsJson: String,  // JSON array of [lat, lon] pairs (the tapped points)
     val distanceMeters: Float,
+    val ascentMeters: Int,
     val estimatedDurationSeconds: Long,
+    val gpxData: String,        // computed route geometry as GPX XML
     val notes: String = ""
 )

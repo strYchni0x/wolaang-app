@@ -18,7 +18,7 @@ class AppContainer(context: Context) {
         context.applicationContext,
         WolaangDatabase::class.java,
         "wolaang.db"
-    ).build()
+    ).addMigrations(WolaangDatabase.MIGRATION_1_2).build()
 
     val tourDao: TourDao = database.tourDao()
     val plannedRouteDao: PlannedRouteDao = database.plannedRouteDao()

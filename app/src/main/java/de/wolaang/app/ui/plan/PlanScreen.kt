@@ -16,7 +16,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -44,6 +48,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.wolaang.app.WolaangApp
+import de.wolaang.app.data.GpxShare
+import de.wolaang.app.data.GpxWriter
+import de.wolaang.app.data.model.PlannedRoute
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RouteResult
 import de.wolaang.app.ui.map.bestLastKnownLocation
@@ -56,9 +63,15 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
+private val NAME_DATE_FORMAT = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
+
+private fun defaultRouteName(type: TourType): String =
+    (if (type == TourType.BIKE) "Radtour " else "Wanderung ") + NAME_DATE_FORMAT.format(Date())
 
 /**
  * Route planning: tap the map to add waypoints (start, optional via points, destination).
@@ -68,7 +81,8 @@ private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
 fun PlanScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val router = remember { (context.applicationContext as WolaangApp).container.offlineRouter }
+    val container = remember { (context.applicationContext as WolaangApp).container }
+    val router = container.offlineRouter
     val scope = rememberCoroutineScope()
 
     val waypoints = remember { mutableStateListOf<GeoPoint>() }
@@ -80,6 +94,9 @@ fun PlanScreen() {
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     // Bumped after a tile download so routing is retried.
     var segmentsVersion by remember { mutableIntStateOf(0) }
+    var showSaveDialog by remember { mutableStateOf(false) }
+    // True once the current route has been saved (reset when the route changes).
+    var isSaved by remember { mutableStateOf(false) }
 
     val mapView = remember {
         MapView(context).apply {
@@ -148,6 +165,7 @@ fun PlanScreen() {
     LaunchedEffect(waypoints.toList(), tourType, segmentsVersion) {
         errorText = null
         route = null
+        isSaved = false
         val pts = waypoints.map { it.latitude to it.longitude }
         if (pts.size < 2) {
             missingSegments = emptyList()
@@ -265,13 +283,79 @@ fun PlanScreen() {
                         "Fehler: $errorText",
                         color = MaterialTheme.colorScheme.error,
                     )
-                    route != null -> RouteSummary(route!!)
+                    route != null -> {
+                        RouteSummary(route!!)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { showSaveDialog = true }, enabled = !isSaved) {
+                                Text(if (isSaved) "Gespeichert" else "Speichern")
+                            }
+                            OutlinedButton(onClick = {
+                                val name = defaultRouteName(tourType)
+                                GpxShare.share(context, name, GpxWriter.writeRoute(name, route!!.points))
+                            }) { Text("GPX teilen") }
+                        }
+                    }
                     waypoints.isEmpty() -> Text("Tippe auf die Karte, um den Start zu setzen.")
                     else -> Text("Tippe auf die Karte, um das Ziel zu setzen.")
                 }
             }
         }
     }
+
+    val currentRoute = route
+    if (showSaveDialog && currentRoute != null) {
+        SaveRouteDialog(
+            initialName = defaultRouteName(tourType),
+            onDismiss = { showSaveDialog = false },
+            onSave = { name ->
+                showSaveDialog = false
+                val waypointsJson = waypoints.joinToString(",", "[", "]") { "[${it.latitude},${it.longitude}]" }
+                scope.launch {
+                    container.plannedRouteDao.insertPlannedRoute(
+                        PlannedRoute(
+                            name = name,
+                            type = tourType,
+                            createdAt = System.currentTimeMillis(),
+                            waypointsJson = waypointsJson,
+                            distanceMeters = currentRoute.distanceMeters.toFloat(),
+                            ascentMeters = currentRoute.ascentMeters,
+                            estimatedDurationSeconds = currentRoute.durationSeconds.toLong(),
+                            gpxData = GpxWriter.writeRoute(name, currentRoute.points),
+                        )
+                    )
+                    isSaved = true
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SaveRouteDialog(
+    initialName: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Route speichern") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) {
+                Text("Speichern")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+    )
 }
 
 @Composable
