@@ -15,6 +15,9 @@ import kotlin.math.floor
 /** A point of a computed route; [elevation] is null where BRouter has no height data. */
 data class RoutePoint(val lat: Double, val lon: Double, val elevation: Double?)
 
+/** A routing data tile on the device. [lastModified] is the server's version date. */
+data class SegmentInfo(val name: String, val sizeBytes: Long, val lastModified: Long)
+
 data class RouteResult(
     val points: List<RoutePoint>,
     val distanceMeters: Int,
@@ -44,6 +47,29 @@ class OfflineRouter(context: Context) {
             .distinct()
             .filterNot { File(segmentDir, "$it.rd5").exists() }
 
+    /** Routing data tiles stored on the device, sorted by name. */
+    fun downloadedSegments(): List<SegmentInfo> =
+        segmentDir.listFiles { f -> f.isFile && f.name.endsWith(".rd5") }
+            ?.map { SegmentInfo(it.name.removeSuffix(".rd5"), it.length(), it.lastModified()) }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+
+    fun deleteSegment(name: String) {
+        File(segmentDir, "$name.rd5").delete()
+    }
+
+    /** Version date of a tile on brouter.de (HEAD request), or null if unknown. */
+    suspend fun remoteLastModified(name: String): Long? = withContext(Dispatchers.IO) {
+        val conn = URL("$SEGMENT_BASE_URL$name.rd5").openConnection() as HttpURLConnection
+        conn.requestMethod = "HEAD"
+        conn.setRequestProperty("User-Agent", appContext.packageName)
+        try {
+            if (conn.responseCode == HttpURLConnection.HTTP_OK) conn.lastModified.takeIf { it > 0 } else null
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /**
      * Downloads one routing data tile from brouter.de. [onProgress] gets values 0..1.
      * Writes to a temp file first, so an aborted download never leaves a broken tile behind.
@@ -72,7 +98,11 @@ class OfflineRouter(context: Context) {
                     }
                 }
             }
+            // Replace an older version only once the new one is complete.
+            target.delete()
             if (!tmp.renameTo(target)) error("Kachel konnte nicht gespeichert werden")
+            // Keep the server's version date, so update checks can compare against it.
+            conn.lastModified.takeIf { it > 0 }?.let { target.setLastModified(it) }
         } finally {
             conn.disconnect()
             tmp.delete()
@@ -149,6 +179,18 @@ class OfflineRouter(context: Context) {
             val flatH = distanceMeters / 4000.0
             val upH = ascentMeters / 300.0
             return ((maxOf(flatH, upH) + minOf(flatH, upH) / 2) * 3600).toInt()
+        }
+
+        /** Human-readable area of a tile, e.g. "E5_N50" → "50–55° N, 5–10° O". */
+        fun describeSegment(name: String): String {
+            val match = Regex("([EW])(\\d+)_([NS])(\\d+)").matchEntire(name) ?: return name
+            val (ew, lon, ns, lat) = match.destructured
+            val lonStart = lon.toInt()
+            val latStart = lat.toInt()
+            // West/south tiles are named by their (negative) lower bound, e.g. W5 = 5°W..0°.
+            val lonRange = if (ew == "E") "$lonStart–${lonStart + 5}° O" else "${lonStart}–${lonStart - 5}° W"
+            val latRange = if (ns == "N") "$latStart–${latStart + 5}° N" else "${latStart}–${latStart - 5}° S"
+            return "$latRange, $lonRange"
         }
 
         /** BRouter tile name for a coordinate, e.g. (52.6, 8.4) → "E5_N50". */
