@@ -30,6 +30,9 @@ class AppContainer(context: Context) {
     /** Offline route planning (BRouter). */
     val offlineRouter: OfflineRouter = OfflineRouter(context)
 
+    /** User preferences (theme, …). */
+    val settings: AppSettings = AppSettings(context)
+
     /** Id of a saved planned route the Plan tab should open next (set by the Tours tab). */
     val routeToOpen = MutableStateFlow<Long?>(null)
 }

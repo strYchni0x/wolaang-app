@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -21,12 +22,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import de.wolaang.app.ui.map.MapScreen
 import de.wolaang.app.ui.plan.PlanScreen
+import de.wolaang.app.ui.settings.SettingsScreen
 import de.wolaang.app.ui.tours.ToursScreen
 
 sealed class Screen(val route: String, val label: String) {
     object Map : Screen("map", "Karte")
     object Tours : Screen("tours", "Touren")
     object Plan : Screen("plan", "Planen")
+    object Settings : Screen("settings", "Einstellungen")
 }
 
 @Composable
@@ -35,7 +38,7 @@ fun WolaangNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    val items = listOf(Screen.Map, Screen.Tours, Screen.Plan)
+    val items = listOf(Screen.Map, Screen.Tours, Screen.Plan, Screen.Settings)
 
     fun navigateTo(screen: Screen) {
         navController.navigate(screen.route) {
@@ -56,6 +59,7 @@ fun WolaangNavHost() {
                                     Screen.Map -> Icons.Default.Place
                                     Screen.Tours -> Icons.AutoMirrored.Filled.List
                                     Screen.Plan -> Icons.Default.Edit
+                                    Screen.Settings -> Icons.Default.Settings
                                 },
                                 contentDescription = screen.label
                             )
@@ -76,6 +80,7 @@ fun WolaangNavHost() {
             composable(Screen.Map.route) { MapScreen() }
             composable(Screen.Tours.route) { ToursScreen(onOpenPlan = { navigateTo(Screen.Plan) }) }
             composable(Screen.Plan.route) { PlanScreen() }
+            composable(Screen.Settings.route) { SettingsScreen() }
         }
     }
 }
