@@ -341,6 +341,7 @@ fun MapScreen() {
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidViewMap(mapView)
+        MapZoomSlider(mapView, Modifier.align(Alignment.CenterEnd).padding(end = 8.dp))
 
         if (recordingState.isRecording) {
             StatsCard(

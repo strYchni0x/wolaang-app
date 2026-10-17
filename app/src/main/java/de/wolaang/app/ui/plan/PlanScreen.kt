@@ -59,6 +59,7 @@ import de.wolaang.app.data.model.PlannedRoute
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RouteResult
 import de.wolaang.app.ui.common.rememberMeteredDownloadGuard
+import de.wolaang.app.ui.map.MapZoomSlider
 import de.wolaang.app.ui.map.ONLINE_TILE_SCALE
 import de.wolaang.app.ui.map.bestLastKnownLocation
 import de.wolaang.app.ui.map.setDarkTiles
@@ -335,6 +336,7 @@ fun PlanScreen() {
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        MapZoomSlider(mapView, Modifier.align(Alignment.CenterEnd).padding(end = 8.dp))
 
         Card(
             modifier = Modifier
