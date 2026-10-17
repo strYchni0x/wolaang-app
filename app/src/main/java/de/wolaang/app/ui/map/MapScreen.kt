@@ -115,11 +115,7 @@ fun MapScreen() {
     val mapView = remember {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
-            // Scale raster tiles to the screen density so labels (street names)
-            // are readable on high-DPI phones. tilesScaleFactor adds extra size
-            // on top of that — increase it for even bigger labels (1.0 = DPI only).
-            setTilesScaledToDpi(true)
-            setTilesScaleFactor(ONLINE_TILE_SCALE)
+            // Tile scaling (label size) is applied by useMapSource below.
             setMultiTouchControls(true)
             controller.setZoom(6.0)
             controller.setCenter(GERMANY_CENTER)
@@ -133,9 +129,10 @@ fun MapScreen() {
     // Online OSM tiles or the downloaded offline maps, as chosen in the settings.
     val mapSource by container.settings.mapSource.collectAsStateWithLifecycle()
     val installedMaps by container.offlineMaps.installed.collectAsStateWithLifecycle()
-    LaunchedEffect(mapSource, installedMaps) {
+    val mapTextSize by container.settings.mapTextSize.collectAsStateWithLifecycle()
+    LaunchedEffect(mapSource, installedMaps, mapTextSize) {
         val files = if (mapSource == MapSource.OFFLINE) installedMaps.map { it.file } else emptyList()
-        mapView.useMapSource(files, darkMap)
+        mapView.useMapSource(files, darkMap, mapTextSize)
     }
     // OSM data attribution (ODbL), for online tiles and offline maps alike.
     DisposableEffect(Unit) {

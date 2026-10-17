@@ -11,6 +11,17 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** Online = OSM tiles from openstreetmap.org, offline = downloaded Mapsforge maps. */
 enum class MapSource { ONLINE, OFFLINE }
 
+/**
+ * Size of the map labels. Online raster tiles are enlarged as a whole on top of the DPI
+ * scaling ([onlineScale]); offline Mapsforge maps are rendered at [offlineScale].
+ */
+enum class MapTextSize(val label: String, val onlineScale: Float, val offlineScale: Float) {
+    SMALL("Klein", 1.0f, 0.8f),
+    NORMAL("Normal", 1.4f, 1.0f),
+    LARGE("Groß", 1.8f, 1.25f),
+    XLARGE("Sehr groß", 2.2f, 1.5f),
+}
+
 /** User preferences, persisted in SharedPreferences and exposed as flows for Compose. */
 class AppSettings(context: Context) {
 
@@ -54,6 +65,18 @@ class AppSettings(context: Context) {
         _mapSource.value = source
     }
 
+    private val _mapTextSize = MutableStateFlow(
+        prefs.getString(KEY_MAP_TEXT_SIZE, null)
+            ?.let { runCatching { MapTextSize.valueOf(it) }.getOrNull() }
+            ?: MapTextSize.NORMAL
+    )
+    val mapTextSize: StateFlow<MapTextSize> = _mapTextSize.asStateFlow()
+
+    fun setMapTextSize(size: MapTextSize) {
+        prefs.edit().putString(KEY_MAP_TEXT_SIZE, size.name).apply()
+        _mapTextSize.value = size
+    }
+
     /** Activity type chosen for the last recording; preselected next time. */
     var lastRecordingType: TourType
         get() = prefs.getString(KEY_LAST_RECORDING_TYPE, null)
@@ -66,5 +89,6 @@ class AppSettings(context: Context) {
         const val KEY_LAST_RECORDING_TYPE = "last_recording_type"
         const val KEY_IMPORT_TARGET = "import_target"
         const val KEY_MAP_SOURCE = "map_source"
+        const val KEY_MAP_TEXT_SIZE = "map_text_size"
     }
 }

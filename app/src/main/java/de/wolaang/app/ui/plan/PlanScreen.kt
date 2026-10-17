@@ -60,7 +60,6 @@ import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RouteResult
 import de.wolaang.app.ui.common.rememberMeteredDownloadGuard
 import de.wolaang.app.ui.map.MapZoomSlider
-import de.wolaang.app.ui.map.ONLINE_TILE_SCALE
 import de.wolaang.app.ui.map.bestLastKnownLocation
 import de.wolaang.app.ui.map.setDarkTiles
 import de.wolaang.app.ui.map.useMapSource
@@ -124,8 +123,6 @@ fun PlanScreen() {
     val mapView = remember {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
-            setTilesScaledToDpi(true)
-            setTilesScaleFactor(ONLINE_TILE_SCALE)
             setMultiTouchControls(true)
             controller.setZoom(6.0)
             controller.setCenter(GERMANY_CENTER)
@@ -139,9 +136,10 @@ fun PlanScreen() {
     // Online OSM tiles or the downloaded offline maps, as chosen in the settings.
     val mapSource by container.settings.mapSource.collectAsStateWithLifecycle()
     val installedMaps by container.offlineMaps.installed.collectAsStateWithLifecycle()
-    LaunchedEffect(mapSource, installedMaps) {
+    val mapTextSize by container.settings.mapTextSize.collectAsStateWithLifecycle()
+    LaunchedEffect(mapSource, installedMaps, mapTextSize) {
         val files = if (mapSource == MapSource.OFFLINE) installedMaps.map { it.file } else emptyList()
-        mapView.useMapSource(files, darkMap)
+        mapView.useMapSource(files, darkMap, mapTextSize)
     }
     // OSM data attribution (ODbL), for online tiles and offline maps alike.
     DisposableEffect(Unit) {

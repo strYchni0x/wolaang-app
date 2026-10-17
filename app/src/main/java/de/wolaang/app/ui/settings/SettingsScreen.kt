@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
 import de.wolaang.app.data.ImportTarget
+import de.wolaang.app.data.MapTextSize
 import de.wolaang.app.data.ThemeMode
 import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.routing.SegmentInfo
@@ -67,6 +68,22 @@ fun SettingsScreen() {
             RadioOption("Wie System", themeMode == ThemeMode.SYSTEM) { settings.setThemeMode(ThemeMode.SYSTEM) }
             RadioOption("Hell", themeMode == ThemeMode.LIGHT) { settings.setThemeMode(ThemeMode.LIGHT) }
             RadioOption("Dunkel", themeMode == ThemeMode.DARK) { settings.setThemeMode(ThemeMode.DARK) }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+        val mapTextSize by settings.mapTextSize.collectAsStateWithLifecycle()
+        SectionTitle("Kartenschrift")
+        Text(
+            "Größe von Straßennamen und Ortsnamen auf der Karte. Die Online-Karte wird dafür " +
+                "insgesamt vergrößert, es passt dann weniger auf den Bildschirm.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(modifier = Modifier.selectableGroup()) {
+            MapTextSize.entries.forEach { size ->
+                RadioOption(size.label, mapTextSize == size) { settings.setMapTextSize(size) }
+            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
