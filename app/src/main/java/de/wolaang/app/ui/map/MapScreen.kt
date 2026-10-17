@@ -61,6 +61,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -76,6 +79,9 @@ private val GERMANY_CENTER = GeoPoint(51.1657, 10.4515)
 
 // Line color of a shown recorded tour (distinct from the red live track and blue plans).
 private val TOUR_COLOR = Color.parseColor("#7B1FA2")
+
+// Zoom level from which the overview shows a start dot per tour.
+private const val OVERVIEW_DOT_MIN_ZOOM = 13.0
 
 // Accuracy (meters) at or below which we consider the fix "good" and hide the status hint.
 private const val GOOD_ACCURACY_M = 20f
@@ -174,8 +180,23 @@ fun MapScreen() {
     var overviewFilter by remember { mutableStateOf<OverviewFilter?>(null) }
     var overviewLines by remember { mutableStateOf<List<OverviewLine>>(emptyList()) }
     var overviewLoading by remember { mutableStateOf(false) }
-    // Lines plus a start dot per tour (short tours are just a dot when zoomed out).
+    // Lines plus a start dot per tour; the dots only from OVERVIEW_DOT_MIN_ZOOM on, so
+    // hundreds of tours don't clutter the zoomed-out map.
     val overviewOverlays = remember { mutableListOf<Overlay>() }
+    DisposableEffect(mapView) {
+        val listener = object : MapListener {
+            override fun onScroll(event: ScrollEvent?) = false
+            override fun onZoom(event: ZoomEvent?): Boolean {
+                val show = mapView.zoomLevelDouble >= OVERVIEW_DOT_MIN_ZOOM
+                overviewOverlays.filterIsInstance<Marker>()
+                    .filter { it.isEnabled != show }
+                    .forEach { it.isEnabled = show }
+                return false
+            }
+        }
+        mapView.addMapListener(listener)
+        onDispose { mapView.removeMapListener(listener) }
+    }
     val scope = rememberCoroutineScope()
 
     fun showTour(tour: Tour) {
@@ -351,6 +372,7 @@ fun MapScreen() {
                 icon = WaypointIcons.dot(context, color)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 setOnMarkerClickListener { _, _ -> select(); true }
+                isEnabled = mapView.zoomLevelDouble >= OVERVIEW_DOT_MIN_ZOOM
             })
         }
         overviewOverlays.addAll(lines + dots)
