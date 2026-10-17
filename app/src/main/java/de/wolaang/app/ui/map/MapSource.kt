@@ -35,3 +35,17 @@ fun MapView.useMapSource(offlineFiles: List<File>, dark: Boolean, textSize: MapT
     setTilesScaleFactor(if (offline) 1f else textSize.onlineScale)
     setDarkTiles(dark)
 }
+
+/** Zooms to [box]; waits for the first layout if the map was just created and has no size yet. */
+fun MapView.zoomToBoxWhenReady(box: org.osmdroid.util.BoundingBox) {
+    if (isLayoutOccurred) {
+        post { zoomToBoundingBox(box, false, 60) }
+    } else {
+        addOnFirstLayoutListener(object : MapView.OnFirstLayoutListener {
+            override fun onFirstLayout(v: android.view.View?, left: Int, top: Int, right: Int, bottom: Int) {
+                removeOnFirstLayoutListener(this)
+                zoomToBoundingBox(box, false, 60)
+            }
+        })
+    }
+}

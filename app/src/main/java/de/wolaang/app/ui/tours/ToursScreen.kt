@@ -46,6 +46,7 @@ import de.wolaang.app.data.ImportOptions
 import de.wolaang.app.data.ImportResult
 import de.wolaang.app.data.ImportTarget
 import de.wolaang.app.data.model.TourType
+import de.wolaang.app.ui.map.OverviewFilter
 import de.wolaang.app.ui.settings.RadioOption
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -135,7 +136,18 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
                 }
             }
             if (tourEntries.isNotEmpty()) {
-                item { SectionHeader("Aufgezeichnete Touren") }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f)) { SectionHeader("Aufgezeichnete Touren") }
+                        TextButton(
+                            onClick = {
+                                container.toursOverview.value = OverviewFilter.ALL
+                                onOpenMap()
+                            },
+                            modifier = Modifier.padding(top = 12.dp),
+                        ) { Text("Alle auf der Karte") }
+                    }
+                }
                 items(tourEntries, key = { it.key }) { entry ->
                     EntryCard(entry, onShare = { GpxShare.share(context, entry.name, entry.gpx) }) {
                         pendingDelete = entry

@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,12 +56,17 @@ import de.wolaang.app.ui.plan.ProfileSample
 import de.wolaang.app.ui.plan.WaypointIcons
 import de.wolaang.app.ui.plan.buildProfile
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
@@ -163,6 +169,21 @@ fun MapScreen() {
         }
     }
     val tourMarkers = remember { mutableListOf<Marker>() }
+
+    // Overview of all recorded tours (or only hikes / bike tours), opened from the Tours tab.
+    var overviewFilter by remember { mutableStateOf<OverviewFilter?>(null) }
+    var overviewLines by remember { mutableStateOf<List<OverviewLine>>(emptyList()) }
+    var overviewLoading by remember { mutableStateOf(false) }
+    // Lines plus a start dot per tour (short tours are just a dot when zoomed out).
+    val overviewOverlays = remember { mutableListOf<Overlay>() }
+    val scope = rememberCoroutineScope()
+
+    fun showTour(tour: Tour) {
+        locationOverlay.disableFollowLocation()
+        tourPolyline.outlinePaint.color = overviewColor(tour.type)
+        shownPoints = GpxReader.readTrack(tour.gpxData)
+        shownTour = tour
+    }
     val scrubMarker = remember {
         Marker(mapView).apply {
             icon = WaypointIcons.dot(context, TOUR_COLOR)
@@ -190,7 +211,8 @@ fun MapScreen() {
 
         // A tour requested from the Tours tab is loaded right after this effect; don't let
         // follow-location or the last-known position pull the map away from it meanwhile.
-        val tourRequested = shownTour != null || container.tourToShow.value != null
+        val tourRequested = shownTour != null || container.tourToShow.value != null ||
+            overviewFilter != null || container.toursOverview.value != null
         if (hasLocationPermission) {
             locationOverlay.enableMyLocation()
             if (!tourRequested) locationOverlay.enableFollowLocation()
@@ -237,7 +259,7 @@ fun MapScreen() {
 
             // Zoom in once we have a precise GPS fix.
             locationOverlay.runOnFirstFix {
-                locationOverlay.myLocation?.takeIf { !tourRequested && shownTour == null }?.let { fix ->
+                locationOverlay.myLocation?.takeIf { !tourRequested && shownTour == null && overviewFilter == null }?.let { fix ->
                     mapView.post {
                         mapView.controller.setZoom(16.0)
                         mapView.controller.animateTo(fix)
@@ -258,10 +280,83 @@ fun MapScreen() {
             if (id == null) return@collect
             container.tourToShow.value = null
             val tour = container.tourDao.getTourById(id) ?: return@collect
-            locationOverlay.disableFollowLocation()
-            shownPoints = GpxReader.readTrack(tour.gpxData)
-            shownTour = tour
+            overviewFilter = null
+            showTour(tour)
         }
+    }
+
+    // Show the overview when the Tours tab asks for it.
+    LaunchedEffect(Unit) {
+        container.toursOverview.collect { filter ->
+            if (filter == null) return@collect
+            container.toursOverview.value = null
+            locationOverlay.disableFollowLocation()
+            shownTour = null
+            shownPoints = emptyList()
+            overviewFilter = filter
+        }
+    }
+
+    LaunchedEffect(overviewFilter) {
+        val filter = overviewFilter
+        if (filter == null) {
+            overviewLines = emptyList()
+            return@LaunchedEffect
+        }
+        overviewLoading = true
+        overviewLines = withContext(Dispatchers.Default) {
+            buildOverviewLines(container.tourDao.getAllTours().first(), filter)
+        }
+        overviewLoading = false
+        val all = overviewLines.flatMap { it.points }
+        if (all.size >= 2 && shownTour == null) {
+            val box = BoundingBox.fromGeoPointsSafe(all)
+            // Leave room for the overview card on top.
+            val padded = BoundingBox(
+                box.latNorth + box.latitudeSpan * 0.25,
+                // extra room on the right for the zoom slider
+                box.lonEast + box.longitudeSpanWithDateLine * 0.15,
+                box.latSouth - box.latitudeSpan * 0.1,
+                box.lonWest - box.longitudeSpanWithDateLine * 0.05,
+            )
+            mapView.zoomToBoxWhenReady(padded)
+        }
+    }
+
+    LaunchedEffect(overviewLines) {
+        mapView.overlays.removeAll(overviewOverlays)
+        overviewOverlays.clear()
+        val lines = mutableListOf<Overlay>()
+        val dots = mutableListOf<Overlay>()
+        overviewLines.forEach { line ->
+            val select = {
+                scope.launch {
+                    // The overview holds thinned points; load the full track for the details.
+                    val tour = container.tourDao.getTourById(line.tour.id) ?: line.tour
+                    showTour(tour)
+                }
+            }
+            val color = overviewColor(line.tour.type)
+            lines.add(Polyline().apply {
+                setPoints(line.points)
+                outlinePaint.color = color
+                outlinePaint.alpha = 0xC0
+                outlinePaint.strokeWidth = 9f
+                // Thin lines are hard to hit; widen the tap tolerance.
+                setDensityMultiplier(4f)
+                setOnClickListener { _, _, _ -> select(); true }
+            })
+            dots.add(Marker(mapView).apply {
+                position = line.points.first()
+                icon = WaypointIcons.dot(context, color)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                setOnMarkerClickListener { _, _ -> select(); true }
+            })
+        }
+        overviewOverlays.addAll(lines + dots)
+        // Below everything else (selected tour, live track, location marker).
+        mapView.overlays.addAll(0, overviewOverlays)
+        mapView.invalidate()
     }
 
     LaunchedEffect(shownPoints) {
@@ -271,7 +366,8 @@ fun MapScreen() {
         val points = shownPoints.map { GeoPoint(it.lat, it.lon) }
         if (points.size >= 2) {
             tourPolyline.setPoints(points)
-            mapView.overlays.add(0, tourPolyline)
+            // Above the overview lines, below markers and the live track.
+            mapView.overlays.add(overviewOverlays.size, tourPolyline)
             listOf(0 to points.first(), 1 to points.last()).forEach { (i, p) ->
                 tourMarkers.add(Marker(mapView).apply {
                     position = p
@@ -289,7 +385,7 @@ fun MapScreen() {
                 box.latSouth - box.latitudeSpan * 1.3,
                 box.lonWest - box.longitudeSpanWithDateLine * 0.1,
             )
-            mapView.post { mapView.zoomToBoundingBox(padded, false, 60) }
+            mapView.zoomToBoxWhenReady(padded)
         }
         mapView.invalidate()
     }
@@ -355,6 +451,25 @@ fun MapScreen() {
                     shownTour = null
                     shownPoints = emptyList()
                     scrubSample = null
+                    // Back to the overview if the tour was picked there; otherwise to the user.
+                    if (overviewFilter == null && hasLocationPermission) {
+                        locationOverlay.enableFollowLocation()
+                        locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(12.dp)
+                    .fillMaxWidth(),
+            )
+        } else if (overviewFilter != null) {
+            OverviewCard(
+                filter = overviewFilter!!,
+                lines = overviewLines,
+                loading = overviewLoading,
+                onFilter = { overviewFilter = it },
+                onClose = {
+                    overviewFilter = null
                     if (hasLocationPermission) {
                         locationOverlay.enableFollowLocation()
                         locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }

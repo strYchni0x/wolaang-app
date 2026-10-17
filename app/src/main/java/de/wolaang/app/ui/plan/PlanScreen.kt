@@ -63,6 +63,7 @@ import de.wolaang.app.ui.map.MapZoomSlider
 import de.wolaang.app.ui.map.bestLastKnownLocation
 import de.wolaang.app.ui.map.setDarkTiles
 import de.wolaang.app.ui.map.useMapSource
+import de.wolaang.app.ui.map.zoomToBoxWhenReady
 import de.wolaang.app.ui.record.RECORD_BUTTON_CLEARANCE
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -312,7 +313,7 @@ fun PlanScreen() {
                     box.lonWest - lonSpan * 0.1,
                 )
                 // Post, so the MapView has its final size.
-                mapView.post { mapView.zoomToBoundingBox(padded, false, 60) }
+                mapView.zoomToBoxWhenReady(padded)
             }
         }
         mapView.invalidate()

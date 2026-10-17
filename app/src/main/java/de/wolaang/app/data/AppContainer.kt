@@ -8,6 +8,7 @@ import de.wolaang.app.data.db.WolaangDatabase
 import de.wolaang.app.maps.OfflineMaps
 import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.tracking.TrackRecorder
+import de.wolaang.app.ui.map.OverviewFilter
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -50,4 +51,7 @@ class AppContainer(context: Context) {
 
     /** Id of a recorded tour the Map tab should show next (set by the Tours tab). */
     val tourToShow = MutableStateFlow<Long?>(null)
+
+    /** Overview of all recorded tours the Map tab should show next (set by the Tours tab). */
+    val toursOverview = MutableStateFlow<OverviewFilter?>(null)
 }
