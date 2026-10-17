@@ -38,8 +38,11 @@ enum class OverviewFilter(val label: String) {
     }
 }
 
-/** What the Tours tab asks the map to show: tour type and optionally one year. */
-data class OverviewRequest(val filter: OverviewFilter, val year: Int? = null)
+/** What the Tours tab asks the map to show: tour type, optionally one year and one country. */
+data class OverviewRequest(val filter: OverviewFilter, val year: Int? = null, val country: String? = null)
+
+/** ISO codes stored in a tour's countries column ("DE,LU"; "-" or "" = none known). */
+fun countryCodes(stored: String): List<String> = stored.split(',').filter { it.length >= 2 }
 
 /** Calendar year (local time) of a timestamp in milliseconds. */
 fun yearOf(millis: Long): Int = Calendar.getInstance().apply { timeInMillis = millis }.get(Calendar.YEAR)
@@ -55,9 +58,13 @@ fun overviewColor(type: TourType): Int =
 // and keeps hundreds of tours smooth to pan.
 private const val MIN_POINT_SPACING_M = 15f
 
-/** Parses and thins the tours matching [filter] (and [year], if set); call off the main thread. */
-fun buildOverviewLines(tours: List<Tour>, filter: OverviewFilter, year: Int?): List<OverviewLine> =
-    tours.filter { filter.matches(it.type) && (year == null || yearOf(it.startedAt) == year) }.mapNotNull { tour ->
+/** Parses and thins the tours matching the [request]; call off the main thread. */
+fun buildOverviewLines(tours: List<Tour>, request: OverviewRequest): List<OverviewLine> =
+    tours.filter {
+        request.filter.matches(it.type) &&
+            (request.year == null || yearOf(it.startedAt) == request.year) &&
+            (request.country == null || request.country in countryCodes(it.countries))
+    }.mapNotNull { tour ->
         val track = runCatching { GpxReader.readTrack(tour.gpxData) }.getOrNull() ?: return@mapNotNull null
         val kept = ArrayList<GeoPoint>()
         val dist = FloatArray(1)
@@ -76,7 +83,8 @@ fun buildOverviewLines(tours: List<Tour>, filter: OverviewFilter, year: Int?): L
 @Composable
 fun OverviewCard(
     filter: OverviewFilter,
-    year: Int?,
+    // Year / country chosen in the Tours tab, e.g. "2025 · Luxemburg", or null.
+    scope: String?,
     lines: List<OverviewLine>,
     loading: Boolean,
     onFilter: (OverviewFilter) -> Unit,
@@ -98,7 +106,7 @@ fun OverviewCard(
                         else -> String.format(
                             Locale.GERMANY,
                             "%s%d %s · %.0f km · Linie antippen für Details",
-                            if (year != null) "$year: " else "",
+                            if (scope != null) "$scope: " else "",
                             lines.size,
                             if (lines.size == 1) "Tour" else "Touren",
                             lines.sumOf { it.tour.distanceMeters.toDouble() } / 1000.0,

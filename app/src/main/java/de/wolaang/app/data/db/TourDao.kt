@@ -21,6 +21,13 @@ interface TourDao {
     @Update
     suspend fun updateTour(tour: Tour)
 
+    /** Tours whose countries have not been determined yet. */
+    @Query("SELECT * FROM tours WHERE countries = ''")
+    fun getUntaggedTours(): Flow<List<Tour>>
+
+    @Query("UPDATE tours SET countries = :countries WHERE id = :id")
+    suspend fun setCountries(id: Long, countries: String)
+
     @Query("DELETE FROM tours WHERE id = :id")
     suspend fun deleteTour(id: Long)
 }

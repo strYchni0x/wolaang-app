@@ -179,6 +179,7 @@ fun MapScreen() {
     // Overview of all recorded tours (or only hikes / bike tours), opened from the Tours tab.
     var overviewFilter by remember { mutableStateOf<OverviewFilter?>(null) }
     var overviewYear by remember { mutableStateOf<Int?>(null) }
+    var overviewCountry by remember { mutableStateOf<String?>(null) }
     var overviewLines by remember { mutableStateOf<List<OverviewLine>>(emptyList()) }
     var overviewLoading by remember { mutableStateOf(false) }
     // Lines plus a start dot per tour; the dots only from OVERVIEW_DOT_MIN_ZOOM on, so
@@ -316,11 +317,12 @@ fun MapScreen() {
             shownTour = null
             shownPoints = emptyList()
             overviewYear = request.year
+            overviewCountry = request.country
             overviewFilter = request.filter
         }
     }
 
-    LaunchedEffect(overviewFilter, overviewYear) {
+    LaunchedEffect(overviewFilter, overviewYear, overviewCountry) {
         val filter = overviewFilter
         if (filter == null) {
             overviewLines = emptyList()
@@ -328,7 +330,10 @@ fun MapScreen() {
         }
         overviewLoading = true
         overviewLines = withContext(Dispatchers.Default) {
-            buildOverviewLines(container.tourDao.getAllTours().first(), filter, overviewYear)
+            buildOverviewLines(
+                container.tourDao.getAllTours().first(),
+                OverviewRequest(filter, overviewYear, overviewCountry),
+            )
         }
         overviewLoading = false
         val all = overviewLines.flatMap { it.points }
@@ -489,13 +494,17 @@ fun MapScreen() {
         } else if (overviewFilter != null) {
             OverviewCard(
                 filter = overviewFilter!!,
-                year = overviewYear,
+                scope = listOfNotNull(
+                    overviewYear?.toString(),
+                    overviewCountry?.let { container.countryLookup.nameOf(it) },
+                ).joinToString(" · ").ifEmpty { null },
                 lines = overviewLines,
                 loading = overviewLoading,
                 onFilter = { overviewFilter = it },
                 onClose = {
                     overviewFilter = null
                     overviewYear = null
+                    overviewCountry = null
                     if (hasLocationPermission) {
                         locationOverlay.enableFollowLocation()
                         locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }

@@ -1,5 +1,6 @@
 package de.wolaang.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -14,5 +15,7 @@ data class PlannedRoute(
     val ascentMeters: Int,
     val estimatedDurationSeconds: Long,
     val gpxData: String,        // computed route geometry as GPX XML
-    val notes: String = ""
+    val notes: String = "",
+    /** ISO codes of the countries passed ("DE,LU"), "-" if none found; "" = not determined yet. */
+    @ColumnInfo(defaultValue = "") val countries: String = "",
 )

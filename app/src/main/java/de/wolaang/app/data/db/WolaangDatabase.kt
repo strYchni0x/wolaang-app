@@ -9,7 +9,7 @@ import de.wolaang.app.data.model.Tour
 
 @Database(
     entities = [Tour::class, PlannedRoute::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class WolaangDatabase : RoomDatabase() {
@@ -33,6 +33,14 @@ abstract class WolaangDatabase : RoomDatabase() {
                         "`estimatedDurationSeconds` INTEGER NOT NULL, `gpxData` TEXT NOT NULL, " +
                         "`notes` TEXT NOT NULL)"
                 )
+            }
+        }
+
+        /** v3: countries column on both tables, filled in afterwards by CountryTagger. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tours` ADD COLUMN `countries` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `planned_routes` ADD COLUMN `countries` TEXT NOT NULL DEFAULT ''")
             }
         }
     }

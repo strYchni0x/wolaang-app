@@ -21,6 +21,13 @@ interface PlannedRouteDao {
     @Update
     suspend fun updatePlannedRoute(route: PlannedRoute)
 
+    /** Routes whose countries have not been determined yet. */
+    @Query("SELECT * FROM planned_routes WHERE countries = ''")
+    fun getUntaggedRoutes(): Flow<List<PlannedRoute>>
+
+    @Query("UPDATE planned_routes SET countries = :countries WHERE id = :id")
+    suspend fun setCountries(id: Long, countries: String)
+
     @Query("DELETE FROM planned_routes WHERE id = :id")
     suspend fun deletePlannedRoute(id: Long)
 }

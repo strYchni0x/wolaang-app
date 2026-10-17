@@ -55,6 +55,7 @@ import de.wolaang.app.data.ImportTarget
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.ui.map.OverviewFilter
 import de.wolaang.app.ui.map.OverviewRequest
+import de.wolaang.app.ui.map.countryCodes
 import de.wolaang.app.ui.map.yearOf
 import de.wolaang.app.ui.settings.RadioOption
 import java.text.SimpleDateFormat
@@ -89,11 +90,20 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
     // List filter: activity type and year (planned routes by creation date).
     var typeFilter by rememberSaveable { mutableStateOf(OverviewFilter.ALL) }
     var yearFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+    var countryFilter by rememberSaveable { mutableStateOf<String?>(null) }
     val years = remember(tours, planned) {
         (tours.map { yearOf(it.startedAt) } + planned.map { yearOf(it.createdAt) }).distinct().sortedDescending()
     }
-    fun matches(type: TourType, date: Long) =
-        typeFilter.matches(type) && (yearFilter == null || yearOf(date) == yearFilter)
+    // Countries present, as (code, German name), sorted by name.
+    val countries = remember(tours, planned) {
+        (tours.flatMap { countryCodes(it.countries) } + planned.flatMap { countryCodes(it.countries) })
+            .distinct()
+            .map { it to container.countryLookup.nameOf(it) }
+            .sortedBy { it.second }
+    }
+    fun matches(type: TourType, date: Long, countries: String) =
+        typeFilter.matches(type) && (yearFilter == null || yearOf(date) == yearFilter) &&
+            (countryFilter == null || countryFilter in countryCodes(countries))
 
     // GPX import: pick files → choose target/type → import → show the result.
     var filesToImport by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -103,7 +113,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
         filesToImport = uris
     }
 
-    val plannedEntries = planned.filter { matches(it.type, it.createdAt) }.map { r ->
+    val plannedEntries = planned.filter { matches(it.type, it.createdAt, it.countries) }.map { r ->
         ListEntry(
             key = "p${r.id}",
             name = r.name,
@@ -117,7 +127,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             },
         )
     }
-    val tourEntries = tours.filter { matches(it.type, it.startedAt) }.map { t ->
+    val tourEntries = tours.filter { matches(it.type, it.startedAt, it.countries) }.map { t ->
         ListEntry(
             key = "t${t.id}",
             name = t.name,
@@ -153,6 +163,9 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
                         years = years,
                         year = yearFilter,
                         onYear = { yearFilter = it },
+                        countries = countries,
+                        country = countryFilter,
+                        onCountry = { countryFilter = it },
                     )
                 }
                 if (plannedEntries.isEmpty() && tourEntries.isEmpty()) {
@@ -180,7 +193,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
                         TextButton(
                             // Shows the tours of the current filter.
                             onClick = {
-                                container.toursOverview.value = OverviewRequest(typeFilter, yearFilter)
+                                container.toursOverview.value = OverviewRequest(typeFilter, yearFilter, countryFilter)
                                 onOpenMap()
                             },
                             modifier = Modifier.padding(top = 12.dp),
@@ -262,7 +275,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
     }
 }
 
-/** Chips for the activity type plus a year menu. */
+/** Chips for the activity type plus year and country menus. */
 @Composable
 private fun FilterRow(
     typeFilter: OverviewFilter,
@@ -270,8 +283,12 @@ private fun FilterRow(
     years: List<Int>,
     year: Int?,
     onYear: (Int?) -> Unit,
+    countries: List<Pair<String, String>>,
+    country: String?,
+    onCountry: (String?) -> Unit,
 ) {
     var yearMenu by remember { mutableStateOf(false) }
+    var countryMenu by remember { mutableStateOf(false) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
@@ -290,6 +307,20 @@ private fun FilterRow(
                 DropdownMenuItem(text = { Text("Alle Jahre") }, onClick = { onYear(null); yearMenu = false })
                 years.forEach { y ->
                     DropdownMenuItem(text = { Text(y.toString()) }, onClick = { onYear(y); yearMenu = false })
+                }
+            }
+        }
+        Box {
+            FilterChip(
+                selected = country != null,
+                onClick = { countryMenu = true },
+                label = { Text(countries.firstOrNull { it.first == country }?.second ?: "Land") },
+                trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+            )
+            DropdownMenu(expanded = countryMenu, onDismissRequest = { countryMenu = false }) {
+                DropdownMenuItem(text = { Text("Alle Länder") }, onClick = { onCountry(null); countryMenu = false })
+                countries.forEach { (code, name) ->
+                    DropdownMenuItem(text = { Text(name) }, onClick = { onCountry(code); countryMenu = false })
                 }
             }
         }

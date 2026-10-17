@@ -1,5 +1,6 @@
 package de.wolaang.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -16,5 +17,7 @@ data class Tour(
     val durationSeconds: Long,
     val elevationGainMeters: Float,
     val gpxData: String,   // GPX XML stored as text
-    val notes: String = ""
+    val notes: String = "",
+    /** ISO codes of the countries passed ("DE,LU"), "-" if none found; "" = not determined yet. */
+    @ColumnInfo(defaultValue = "") val countries: String = "",
 )
