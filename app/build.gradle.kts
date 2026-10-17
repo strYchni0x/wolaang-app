@@ -58,6 +58,8 @@ dependencies {
 
     // Map
     implementation(libs.osmdroid.android)
+    // Offline vector maps (Mapsforge .map files, rendered on the device; mapsforge is LGPL-3.0)
+    implementation(libs.osmdroid.mapsforge)
 
     // Offline routing: BRouter 1.7.10 routing-only jar (MIT, see libs/BROUTER-LICENSE.txt)
     implementation(files("libs/brouter-1.7.10-ro.jar"))

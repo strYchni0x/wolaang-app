@@ -4,12 +4,11 @@ import android.content.Context
 import btools.router.RoutingContext
 import btools.router.RoutingEngine
 import btools.router.RoutingParamCollector
+import de.wolaang.app.data.FileDownloader
 import de.wolaang.app.data.model.TourType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.math.floor
 
 /** A point of a computed route; [elevation] is null where BRouter has no height data. */
@@ -34,7 +33,7 @@ data class RouteResult(
  *
  * Only the tile download touches the network; routing itself runs fully on the device.
  */
-class OfflineRouter(context: Context) {
+class OfflineRouter(context: Context, private val downloader: FileDownloader) {
 
     private val appContext = context.applicationContext
     private val baseDir = File(appContext.filesDir, "brouter")
@@ -59,55 +58,11 @@ class OfflineRouter(context: Context) {
     }
 
     /** Version date of a tile on brouter.de (HEAD request), or null if unknown. */
-    suspend fun remoteLastModified(name: String): Long? = withContext(Dispatchers.IO) {
-        val conn = URL("$SEGMENT_BASE_URL$name.rd5").openConnection() as HttpURLConnection
-        conn.requestMethod = "HEAD"
-        conn.setRequestProperty("User-Agent", appContext.packageName)
-        try {
-            if (conn.responseCode == HttpURLConnection.HTTP_OK) conn.lastModified.takeIf { it > 0 } else null
-        } finally {
-            conn.disconnect()
-        }
-    }
+    suspend fun remoteLastModified(name: String): Long? = downloader.remoteLastModified("$SEGMENT_BASE_URL$name.rd5")
 
-    /**
-     * Downloads one routing data tile from brouter.de. [onProgress] gets values 0..1.
-     * Writes to a temp file first, so an aborted download never leaves a broken tile behind.
-     */
-    suspend fun downloadSegment(name: String, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
-        segmentDir.mkdirs()
-        val target = File(segmentDir, "$name.rd5")
-        val tmp = File(segmentDir, "$name.rd5.part")
-        val conn = URL("$SEGMENT_BASE_URL$name.rd5").openConnection() as HttpURLConnection
-        conn.setRequestProperty("User-Agent", appContext.packageName)
-        try {
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                error("Download fehlgeschlagen (HTTP ${conn.responseCode})")
-            }
-            val total = conn.contentLengthLong
-            conn.inputStream.use { input ->
-                tmp.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var done = 0L
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        output.write(buffer, 0, n)
-                        done += n
-                        if (total > 0) onProgress(done.toFloat() / total)
-                    }
-                }
-            }
-            // Replace an older version only once the new one is complete.
-            target.delete()
-            if (!tmp.renameTo(target)) error("Kachel konnte nicht gespeichert werden")
-            // Keep the server's version date, so update checks can compare against it.
-            conn.lastModified.takeIf { it > 0 }?.let { target.setLastModified(it) }
-        } finally {
-            conn.disconnect()
-            tmp.delete()
-        }
-    }
+    /** Downloads one routing data tile from brouter.de. [onProgress] gets values 0..1. */
+    suspend fun downloadSegment(name: String, onProgress: (Float) -> Unit) =
+        downloader.download("$SEGMENT_BASE_URL$name.rd5", File(segmentDir, "$name.rd5"), onProgress)
 
     /** Computes a route through [waypoints] (lat, lon). Blocking work runs on [Dispatchers.Default]. */
     suspend fun route(waypoints: List<Pair<Double, Double>>, type: TourType): RouteResult =

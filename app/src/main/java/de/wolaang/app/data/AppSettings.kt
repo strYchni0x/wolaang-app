@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** Online = OSM tiles from openstreetmap.org, offline = downloaded Mapsforge maps. */
+enum class MapSource { ONLINE, OFFLINE }
+
 /** User preferences, persisted in SharedPreferences and exposed as flows for Compose. */
 class AppSettings(context: Context) {
 
@@ -39,6 +42,18 @@ class AppSettings(context: Context) {
         _importTarget.value = target
     }
 
+    private val _mapSource = MutableStateFlow(
+        prefs.getString(KEY_MAP_SOURCE, null)
+            ?.let { runCatching { MapSource.valueOf(it) }.getOrNull() }
+            ?: MapSource.ONLINE
+    )
+    val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
+
+    fun setMapSource(source: MapSource) {
+        prefs.edit().putString(KEY_MAP_SOURCE, source.name).apply()
+        _mapSource.value = source
+    }
+
     /** Activity type chosen for the last recording; preselected next time. */
     var lastRecordingType: TourType
         get() = prefs.getString(KEY_LAST_RECORDING_TYPE, null)
@@ -50,5 +65,6 @@ class AppSettings(context: Context) {
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_RECORDING_TYPE = "last_recording_type"
         const val KEY_IMPORT_TARGET = "import_target"
+        const val KEY_MAP_SOURCE = "map_source"
     }
 }

@@ -5,6 +5,7 @@ import androidx.room.Room
 import de.wolaang.app.data.db.PlannedRouteDao
 import de.wolaang.app.data.db.TourDao
 import de.wolaang.app.data.db.WolaangDatabase
+import de.wolaang.app.maps.OfflineMaps
 import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.tracking.TrackRecorder
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,8 +28,16 @@ class AppContainer(context: Context) {
     /** Shared live state of the current recording (written by TrackingService). */
     val trackRecorder: TrackRecorder = TrackRecorder()
 
+    private val downloader = FileDownloader(userAgent = context.packageName)
+
     /** Offline route planning (BRouter). */
-    val offlineRouter: OfflineRouter = OfflineRouter(context)
+    val offlineRouter: OfflineRouter = OfflineRouter(context, downloader)
+
+    /** Offline vector maps (Mapsforge) per region. */
+    val offlineMaps: OfflineMaps = OfflineMaps(context, downloader) {
+        // The first downloaded map is what the user wants to see — switch to it.
+        settings.setMapSource(MapSource.OFFLINE)
+    }
 
     /** GPX import into planned routes or recorded tours. */
     val gpxImporter: GpxImporter = GpxImporter(context.contentResolver, tourDao, plannedRouteDao)

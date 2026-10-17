@@ -49,15 +49,20 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
 import de.wolaang.app.data.GpxReader
 import de.wolaang.app.data.GpxShare
 import de.wolaang.app.data.GpxWriter
+import de.wolaang.app.data.MapSource
 import de.wolaang.app.data.model.PlannedRoute
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RouteResult
+import de.wolaang.app.ui.common.rememberMeteredDownloadGuard
+import de.wolaang.app.ui.map.ONLINE_TILE_SCALE
 import de.wolaang.app.ui.map.bestLastKnownLocation
 import de.wolaang.app.ui.map.setDarkTiles
+import de.wolaang.app.ui.map.useMapSource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,6 +74,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
@@ -101,6 +107,7 @@ fun PlanScreen() {
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     // Bumped after a tile download so routing is retried.
     var segmentsVersion by remember { mutableIntStateOf(0) }
+    val downloadGuard = rememberMeteredDownloadGuard()
     var showSaveDialog by remember { mutableStateOf(false) }
     // The saved route currently being edited (opened from the Tours tab), or null.
     var editingRoute by remember { mutableStateOf<PlannedRoute?>(null) }
@@ -116,7 +123,7 @@ fun PlanScreen() {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setTilesScaledToDpi(true)
-            setTilesScaleFactor(1.4f)
+            setTilesScaleFactor(ONLINE_TILE_SCALE)
             setMultiTouchControls(true)
             controller.setZoom(6.0)
             controller.setCenter(GERMANY_CENTER)
@@ -126,6 +133,20 @@ fun PlanScreen() {
     // Darken the map tiles together with the app's dark design.
     val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.5f
     LaunchedEffect(darkMap) { mapView.setDarkTiles(darkMap) }
+
+    // Online OSM tiles or the downloaded offline maps, as chosen in the settings.
+    val mapSource by container.settings.mapSource.collectAsStateWithLifecycle()
+    val installedMaps by container.offlineMaps.installed.collectAsStateWithLifecycle()
+    LaunchedEffect(mapSource, installedMaps) {
+        val files = if (mapSource == MapSource.OFFLINE) installedMaps.map { it.file } else emptyList()
+        mapView.useMapSource(files, darkMap)
+    }
+    // OSM data attribution (ODbL), for online tiles and offline maps alike.
+    DisposableEffect(Unit) {
+        val copyright = CopyrightOverlay(context)
+        mapView.overlays.add(copyright)
+        onDispose { mapView.overlays.remove(copyright) }
+    }
 
     // Marks the spot the finger is on in the elevation profile.
     val scrubMarker = remember {
@@ -379,20 +400,22 @@ fun PlanScreen() {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = {
-                            scope.launch {
-                                try {
-                                    for ((i, name) in missingSegments.withIndex()) {
-                                        router.downloadSegment(name) { p ->
-                                            downloadProgress = (i + p) / missingSegments.size
+                            downloadGuard("ca. ${missingSegments.size * 180} MB") {
+                                scope.launch {
+                                    try {
+                                        for ((i, name) in missingSegments.withIndex()) {
+                                            router.downloadSegment(name) { p ->
+                                                downloadProgress = (i + p) / missingSegments.size
+                                            }
                                         }
+                                        segmentsVersion++
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        errorText = e.message ?: e.toString()
+                                    } finally {
+                                        downloadProgress = null
                                     }
-                                    segmentsVersion++
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    errorText = e.message ?: e.toString()
-                                } finally {
-                                    downloadProgress = null
                                 }
                             }
                         }) { Text("Herunterladen") }

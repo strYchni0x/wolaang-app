@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import de.wolaang.app.data.AppContainer
 import org.osmdroid.config.Configuration
+import org.osmdroid.mapsforge.MapsForgeTileSource
 import java.io.File
 
 class WolaangApp : Application() {
@@ -23,5 +24,7 @@ class WolaangApp : Application() {
             osmdroidBasePath = File(cacheDir, "osmdroid")
             osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
         }
+        // Mapsforge renderer for the offline maps.
+        MapsForgeTileSource.createInstance(this)
     }
 }

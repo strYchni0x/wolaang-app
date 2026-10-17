@@ -89,12 +89,16 @@ fun SettingsScreen() {
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
+        OfflineMapsSection(container.offlineMaps, settings)
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
         RoutingRegions(container.offlineRouter)
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleSmall,

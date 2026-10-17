@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
 import de.wolaang.app.data.GpxReader
+import de.wolaang.app.data.MapSource
 import de.wolaang.app.data.model.Tour
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RoutePoint
@@ -64,6 +65,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
@@ -123,7 +125,7 @@ fun MapScreen() {
             // are readable on high-DPI phones. tilesScaleFactor adds extra size
             // on top of that — increase it for even bigger labels (1.0 = DPI only).
             setTilesScaledToDpi(true)
-            setTilesScaleFactor(1.4f)
+            setTilesScaleFactor(ONLINE_TILE_SCALE)
             setMultiTouchControls(true)
             controller.setZoom(6.0)
             controller.setCenter(GERMANY_CENTER)
@@ -133,6 +135,20 @@ fun MapScreen() {
     // Darken the map tiles together with the app's dark design.
     val darkMap = MaterialTheme.colorScheme.background.luminance() < 0.5f
     LaunchedEffect(darkMap) { mapView.setDarkTiles(darkMap) }
+
+    // Online OSM tiles or the downloaded offline maps, as chosen in the settings.
+    val mapSource by container.settings.mapSource.collectAsStateWithLifecycle()
+    val installedMaps by container.offlineMaps.installed.collectAsStateWithLifecycle()
+    LaunchedEffect(mapSource, installedMaps) {
+        val files = if (mapSource == MapSource.OFFLINE) installedMaps.map { it.file } else emptyList()
+        mapView.useMapSource(files, darkMap)
+    }
+    // OSM data attribution (ODbL), for online tiles and offline maps alike.
+    DisposableEffect(Unit) {
+        val copyright = CopyrightOverlay(context)
+        mapView.overlays.add(copyright)
+        onDispose { mapView.overlays.remove(copyright) }
+    }
 
     val locationOverlay = remember {
         MyLocationNewOverlay(GpsMyLocationProvider(context), mapView)
