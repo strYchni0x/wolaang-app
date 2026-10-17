@@ -3,6 +3,8 @@ package de.wolaang.app.ui.tours
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,10 +19,14 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +54,8 @@ import de.wolaang.app.data.ImportResult
 import de.wolaang.app.data.ImportTarget
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.ui.map.OverviewFilter
+import de.wolaang.app.ui.map.OverviewRequest
+import de.wolaang.app.ui.map.yearOf
 import de.wolaang.app.ui.settings.RadioOption
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -77,6 +86,15 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
     val scope = rememberCoroutineScope()
     var pendingDelete by remember { mutableStateOf<ListEntry?>(null) }
 
+    // List filter: activity type and year (planned routes by creation date).
+    var typeFilter by rememberSaveable { mutableStateOf(OverviewFilter.ALL) }
+    var yearFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+    val years = remember(tours, planned) {
+        (tours.map { yearOf(it.startedAt) } + planned.map { yearOf(it.createdAt) }).distinct().sortedDescending()
+    }
+    fun matches(type: TourType, date: Long) =
+        typeFilter.matches(type) && (yearFilter == null || yearOf(date) == yearFilter)
+
     // GPX import: pick files → choose target/type → import → show the result.
     var filesToImport by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var importing by remember { mutableStateOf(false) }
@@ -85,7 +103,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
         filesToImport = uris
     }
 
-    val plannedEntries = planned.map { r ->
+    val plannedEntries = planned.filter { matches(it.type, it.createdAt) }.map { r ->
         ListEntry(
             key = "p${r.id}",
             name = r.name,
@@ -99,7 +117,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             },
         )
     }
-    val tourEntries = tours.map { t ->
+    val tourEntries = tours.filter { matches(it.type, it.startedAt) }.map { t ->
         ListEntry(
             key = "t${t.id}",
             name = t.name,
@@ -127,6 +145,26 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             // Keep the last card clear of the import button.
             contentPadding = PaddingValues(bottom = 88.dp),
         ) {
+            if (tours.isNotEmpty() || planned.isNotEmpty()) {
+                item {
+                    FilterRow(
+                        typeFilter = typeFilter,
+                        onType = { typeFilter = it },
+                        years = years,
+                        year = yearFilter,
+                        onYear = { yearFilter = it },
+                    )
+                }
+                if (plannedEntries.isEmpty() && tourEntries.isEmpty()) {
+                    item {
+                        Text(
+                            "Keine Touren für diese Auswahl.",
+                            modifier = Modifier.padding(vertical = 24.dp).fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
             if (plannedEntries.isNotEmpty()) {
                 item { SectionHeader("Geplante Routen") }
                 items(plannedEntries, key = { it.key }) { entry ->
@@ -140,12 +178,13 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(modifier = Modifier.weight(1f)) { SectionHeader("Aufgezeichnete Touren") }
                         TextButton(
+                            // Shows the tours of the current filter.
                             onClick = {
-                                container.toursOverview.value = OverviewFilter.ALL
+                                container.toursOverview.value = OverviewRequest(typeFilter, yearFilter)
                                 onOpenMap()
                             },
                             modifier = Modifier.padding(top = 12.dp),
-                        ) { Text("Alle auf der Karte") }
+                        ) { Text("Auf der Karte zeigen") }
                     }
                 }
                 items(tourEntries, key = { it.key }) { entry ->
@@ -220,6 +259,40 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Abbrechen") } },
         )
+    }
+}
+
+/** Chips for the activity type plus a year menu. */
+@Composable
+private fun FilterRow(
+    typeFilter: OverviewFilter,
+    onType: (OverviewFilter) -> Unit,
+    years: List<Int>,
+    year: Int?,
+    onYear: (Int?) -> Unit,
+) {
+    var yearMenu by remember { mutableStateOf(false) }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
+    ) {
+        OverviewFilter.entries.forEach { f ->
+            FilterChip(selected = f == typeFilter, onClick = { onType(f) }, label = { Text(f.label) })
+        }
+        Box {
+            FilterChip(
+                selected = year != null,
+                onClick = { yearMenu = true },
+                label = { Text(year?.toString() ?: "Jahr") },
+                trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+            )
+            DropdownMenu(expanded = yearMenu, onDismissRequest = { yearMenu = false }) {
+                DropdownMenuItem(text = { Text("Alle Jahre") }, onClick = { onYear(null); yearMenu = false })
+                years.forEach { y ->
+                    DropdownMenuItem(text = { Text(y.toString()) }, onClick = { onYear(y); yearMenu = false })
+                }
+            }
+        }
     }
 }
 

@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import de.wolaang.app.data.GpxReader
 import de.wolaang.app.data.model.Tour
 import de.wolaang.app.data.model.TourType
+import java.util.Calendar
 import java.util.Locale
 import org.osmdroid.util.GeoPoint
 
@@ -37,6 +38,12 @@ enum class OverviewFilter(val label: String) {
     }
 }
 
+/** What the Tours tab asks the map to show: tour type and optionally one year. */
+data class OverviewRequest(val filter: OverviewFilter, val year: Int? = null)
+
+/** Calendar year (local time) of a timestamp in milliseconds. */
+fun yearOf(millis: Long): Int = Calendar.getInstance().apply { timeInMillis = millis }.get(Calendar.YEAR)
+
 /** A recorded tour in the overview, with a thinned-out line for drawing. */
 class OverviewLine(val tour: Tour, val points: List<GeoPoint>)
 
@@ -48,9 +55,9 @@ fun overviewColor(type: TourType): Int =
 // and keeps hundreds of tours smooth to pan.
 private const val MIN_POINT_SPACING_M = 15f
 
-/** Parses and thins the tours matching [filter]; call off the main thread. */
-fun buildOverviewLines(tours: List<Tour>, filter: OverviewFilter): List<OverviewLine> =
-    tours.filter { filter.matches(it.type) }.mapNotNull { tour ->
+/** Parses and thins the tours matching [filter] (and [year], if set); call off the main thread. */
+fun buildOverviewLines(tours: List<Tour>, filter: OverviewFilter, year: Int?): List<OverviewLine> =
+    tours.filter { filter.matches(it.type) && (year == null || yearOf(it.startedAt) == year) }.mapNotNull { tour ->
         val track = runCatching { GpxReader.readTrack(tour.gpxData) }.getOrNull() ?: return@mapNotNull null
         val kept = ArrayList<GeoPoint>()
         val dist = FloatArray(1)
@@ -69,6 +76,7 @@ fun buildOverviewLines(tours: List<Tour>, filter: OverviewFilter): List<Overview
 @Composable
 fun OverviewCard(
     filter: OverviewFilter,
+    year: Int?,
     lines: List<OverviewLine>,
     loading: Boolean,
     onFilter: (OverviewFilter) -> Unit,
@@ -89,7 +97,8 @@ fun OverviewCard(
                         lines.isEmpty() -> "Keine aufgezeichneten Touren."
                         else -> String.format(
                             Locale.GERMANY,
-                            "%d %s · %.0f km · Linie antippen für Details",
+                            "%s%d %s · %.0f km · Linie antippen für Details",
+                            if (year != null) "$year: " else "",
                             lines.size,
                             if (lines.size == 1) "Tour" else "Touren",
                             lines.sumOf { it.tour.distanceMeters.toDouble() } / 1000.0,

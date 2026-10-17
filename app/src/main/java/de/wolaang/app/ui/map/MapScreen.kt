@@ -178,6 +178,7 @@ fun MapScreen() {
 
     // Overview of all recorded tours (or only hikes / bike tours), opened from the Tours tab.
     var overviewFilter by remember { mutableStateOf<OverviewFilter?>(null) }
+    var overviewYear by remember { mutableStateOf<Int?>(null) }
     var overviewLines by remember { mutableStateOf<List<OverviewLine>>(emptyList()) }
     var overviewLoading by remember { mutableStateOf(false) }
     // Lines plus a start dot per tour; the dots only from OVERVIEW_DOT_MIN_ZOOM on, so
@@ -308,17 +309,18 @@ fun MapScreen() {
 
     // Show the overview when the Tours tab asks for it.
     LaunchedEffect(Unit) {
-        container.toursOverview.collect { filter ->
-            if (filter == null) return@collect
+        container.toursOverview.collect { request ->
+            if (request == null) return@collect
             container.toursOverview.value = null
             locationOverlay.disableFollowLocation()
             shownTour = null
             shownPoints = emptyList()
-            overviewFilter = filter
+            overviewYear = request.year
+            overviewFilter = request.filter
         }
     }
 
-    LaunchedEffect(overviewFilter) {
+    LaunchedEffect(overviewFilter, overviewYear) {
         val filter = overviewFilter
         if (filter == null) {
             overviewLines = emptyList()
@@ -326,7 +328,7 @@ fun MapScreen() {
         }
         overviewLoading = true
         overviewLines = withContext(Dispatchers.Default) {
-            buildOverviewLines(container.tourDao.getAllTours().first(), filter)
+            buildOverviewLines(container.tourDao.getAllTours().first(), filter, overviewYear)
         }
         overviewLoading = false
         val all = overviewLines.flatMap { it.points }
@@ -487,11 +489,13 @@ fun MapScreen() {
         } else if (overviewFilter != null) {
             OverviewCard(
                 filter = overviewFilter!!,
+                year = overviewYear,
                 lines = overviewLines,
                 loading = overviewLoading,
                 onFilter = { overviewFilter = it },
                 onClose = {
                     overviewFilter = null
+                    overviewYear = null
                     if (hasLocationPermission) {
                         locationOverlay.enableFollowLocation()
                         locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }
