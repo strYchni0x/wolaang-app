@@ -20,17 +20,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,7 +49,7 @@ import de.wolaang.app.data.MapSource
 import de.wolaang.app.data.model.Tour
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RoutePoint
-import de.wolaang.app.tracking.TrackingService
+import de.wolaang.app.ui.record.RECORD_BUTTON_CLEARANCE
 import de.wolaang.app.ui.plan.ElevationProfileCard
 import de.wolaang.app.ui.plan.ProfileSample
 import de.wolaang.app.ui.plan.WaypointIcons
@@ -179,8 +173,6 @@ fun MapScreen() {
             setOnMarkerClickListener { _, _ -> true }
         }
     }
-
-    var showRecordingTypeDialog by remember { mutableStateOf(false) }
 
     // Ask for the permissions we need on first entry.
     LaunchedEffect(Unit) {
@@ -327,7 +319,13 @@ fun MapScreen() {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_RESUME -> {
+                    mapView.onResume()
+                    // The permission may have been granted meanwhile (e.g. via the record button).
+                    hasLocationPermission = hasLocationPermission || ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.ACCESS_FINE_LOCATION,
+                    ) == PackageManager.PERMISSION_GRANTED
+                }
                 Lifecycle.Event.ON_PAUSE -> mapView.onPause()
                 else -> Unit
             }
@@ -392,78 +390,12 @@ fun MapScreen() {
                 lineColor = ComposeColor(TOUR_COLOR),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    // Sits above the record button.
-                    .padding(start = 12.dp, end = 12.dp, bottom = 88.dp)
+                    // Leaves room for the record button that sticks out of the bottom bar.
+                    .padding(start = 12.dp, end = 12.dp, bottom = RECORD_BUTTON_CLEARANCE)
                     .fillMaxWidth(),
             )
         }
-
-        ExtendedFloatingActionButton(
-            onClick = {
-                if (recordingState.isRecording) {
-                    TrackingService.stop(context)
-                } else if (hasLocationPermission) {
-                    showRecordingTypeDialog = true
-                } else {
-                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-                }
-            },
-            icon = {
-                Icon(
-                    imageVector = if (recordingState.isRecording) Icons.Default.Clear else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                )
-            },
-            text = { Text(if (recordingState.isRecording) "Stopp" else "Aufzeichnen") },
-            containerColor = if (recordingState.isRecording) {
-                ComposeColor(0xFFD32F2F)
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-            contentColor = ComposeColor.White,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-        )
     }
-
-    if (showRecordingTypeDialog) {
-        RecordingTypeDialog(
-            preselected = container.settings.lastRecordingType,
-            onDismiss = { showRecordingTypeDialog = false },
-            onStart = { type ->
-                showRecordingTypeDialog = false
-                container.settings.lastRecordingType = type
-                TrackingService.start(context, type)
-            },
-        )
-    }
-}
-
-/** Asks what is being recorded; the last choice is the highlighted (filled) button. */
-@Composable
-private fun RecordingTypeDialog(
-    preselected: TourType,
-    onDismiss: () -> Unit,
-    onStart: (TourType) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Aufzeichnung starten") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(TourType.HIKE to "Wandern", TourType.BIKE to "Rad").forEach { (type, label) ->
-                    if (type == preselected) {
-                        Button(onClick = { onStart(type) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
-                    } else {
-                        OutlinedButton(onClick = { onStart(type) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
-    )
 }
 
 @Composable

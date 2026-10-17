@@ -64,6 +64,7 @@ import de.wolaang.app.ui.map.ONLINE_TILE_SCALE
 import de.wolaang.app.ui.map.bestLastKnownLocation
 import de.wolaang.app.ui.map.setDarkTiles
 import de.wolaang.app.ui.map.useMapSource
+import de.wolaang.app.ui.record.RECORD_BUTTON_CLEARANCE
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -456,7 +457,7 @@ fun PlanScreen() {
                 lineColor = ComposeColor(ROUTE_COLOR),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(12.dp)
+                    .padding(start = 12.dp, end = 12.dp, bottom = RECORD_BUTTON_CLEARANCE)
                     .fillMaxWidth(),
             )
         }
