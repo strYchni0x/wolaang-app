@@ -9,7 +9,7 @@ import de.wolaang.app.data.model.Tour
 
 @Database(
     entities = [Tour::class, PlannedRoute::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class WolaangDatabase : RoomDatabase() {
@@ -44,12 +44,18 @@ abstract class WolaangDatabase : RoomDatabase() {
             }
         }
 
-        /** v4: corrected borders (Borkum, small islands); determine all countries again. */
-        val MIGRATION_3_4 = object : Migration(3, 4) {
+        /** Clears the stored countries so all entries are tagged again (after border corrections). */
+        private fun retagCountries(from: Int, to: Int) = object : Migration(from, to) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("UPDATE `tours` SET `countries` = ''")
                 db.execSQL("UPDATE `planned_routes` SET `countries` = ''")
             }
         }
+
+        /** v4: small islands fall back to the nearest country. */
+        val MIGRATION_3_4 = retagCountries(3, 4)
+
+        /** v5: Natural Earth 1:10m borders, Konstanz corrected. */
+        val MIGRATION_4_5 = retagCountries(4, 5)
     }
 }

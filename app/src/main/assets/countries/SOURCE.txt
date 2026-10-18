@@ -1,3 +1,6 @@
-countries.bin: country borders from Natural Earth, 1:50m Admin 0 - Countries
-(ne_50m_admin_0_countries, https://www.naturalearthdata.com/). Public domain.
+countries.bin: country borders from Natural Earth, 1:10m Admin 0 - Countries
+(ne_10m_admin_0_countries, https://www.naturalearthdata.com/). Public domain.
 Converted to a compact binary format (names in German, coordinates rounded to 1e-4 degrees).
+
+Correction: the German-Swiss border at Konstanz (Natural Earth gives Konstanz south of the
+Seerhein to Switzerland) is taken from OpenStreetMap, (c) OpenStreetMap contributors, ODbL.

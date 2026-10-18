@@ -31,6 +31,7 @@ class AppContainer(context: Context) {
         WolaangDatabase.MIGRATION_1_2,
         WolaangDatabase.MIGRATION_2_3,
         WolaangDatabase.MIGRATION_3_4,
+        WolaangDatabase.MIGRATION_4_5,
     ).build()
 
     val tourDao: TourDao = database.tourDao()

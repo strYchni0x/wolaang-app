@@ -6,9 +6,9 @@ import de.wolaang.app.routing.RoutePoint
 import java.io.DataInputStream
 
 /**
- * Offline country lookup from the Natural Earth 1:50m borders (public domain) in
- * assets/countries/countries.bin. Accurate to about a kilometer at borders, which is
- * enough to tell which countries a tour went through.
+ * Offline country lookup from the Natural Earth 1:10m borders (public domain, Konstanz
+ * corrected from OSM) in assets/countries/countries.bin. Accurate to a few hundred meters
+ * at borders, which is enough to tell which countries a tour went through.
  */
 class CountryLookup(private val context: Context) {
 
