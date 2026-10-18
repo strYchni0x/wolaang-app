@@ -55,6 +55,7 @@ import de.wolaang.app.data.GpxReader
 import de.wolaang.app.data.GpxShare
 import de.wolaang.app.data.GpxWriter
 import de.wolaang.app.data.MapSource
+import de.wolaang.app.data.db.getPlannedRouteById
 import de.wolaang.app.data.model.PlannedRoute
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RouteResult

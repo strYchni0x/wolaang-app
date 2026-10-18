@@ -7,13 +7,24 @@ import androidx.room.Update
 import de.wolaang.app.data.model.Tour
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Queries returning [Tour] leave out the GPX (gpxData = ""): a long track can be bigger than
+ * the 2 MB Android reads per row. The GPX is read in pieces, see [getTourById] / [gpxOf].
+ */
 @Dao
 interface TourDao {
-    @Query("SELECT * FROM tours ORDER BY startedAt DESC")
+    @Query("SELECT $TOUR_COLUMNS FROM tours ORDER BY startedAt DESC")
     fun getAllTours(): Flow<List<Tour>>
 
-    @Query("SELECT * FROM tours WHERE id = :id")
-    suspend fun getTourById(id: Long): Tour?
+    @Query("SELECT $TOUR_COLUMNS FROM tours WHERE id = :id")
+    suspend fun getTourWithoutGpx(id: Long): Tour?
+
+    @Query("SELECT length(gpxData) FROM tours WHERE id = :id")
+    suspend fun gpxLength(id: Long): Int?
+
+    /** [length] characters of the GPX from [start] (1-based, as in SQL substr). */
+    @Query("SELECT substr(gpxData, :start, :length) FROM tours WHERE id = :id")
+    suspend fun gpxPart(id: Long, start: Int, length: Int): String?
 
     @Insert
     suspend fun insertTour(tour: Tour): Long
@@ -21,13 +32,18 @@ interface TourDao {
     @Update
     suspend fun updateTour(tour: Tour)
 
-    /** Tours whose countries have not been determined yet. */
-    @Query("SELECT * FROM tours WHERE countries = ''")
-    fun getUntaggedTours(): Flow<List<Tour>>
+    /** Ids of the tours whose countries have not been determined yet. */
+    @Query("SELECT id FROM tours WHERE countries = ''")
+    fun getUntaggedTourIds(): Flow<List<Long>>
 
     @Query("UPDATE tours SET countries = :countries WHERE id = :id")
     suspend fun setCountries(id: Long, countries: String)
 
     @Query("DELETE FROM tours WHERE id = :id")
     suspend fun deleteTour(id: Long)
+
+    companion object {
+        const val TOUR_COLUMNS = "id, name, type, startedAt, finishedAt, distanceMeters, durationSeconds, " +
+            "elevationGainMeters, '' AS gpxData, notes, countries"
+    }
 }

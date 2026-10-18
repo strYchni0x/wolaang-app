@@ -58,14 +58,18 @@ fun overviewColor(type: TourType): Int =
 // and keeps hundreds of tours smooth to pan.
 private const val MIN_POINT_SPACING_M = 15f
 
-/** Parses and thins the tours matching the [request]; call off the main thread. */
-fun buildOverviewLines(tours: List<Tour>, request: OverviewRequest): List<OverviewLine> =
+/** Loads ([gpxOf]), parses and thins the tours matching the [request]; call off the main thread. */
+suspend fun buildOverviewLines(
+    tours: List<Tour>,
+    request: OverviewRequest,
+    gpxOf: suspend (Long) -> String,
+): List<OverviewLine> =
     tours.filter {
         request.filter.matches(it.type) &&
             (request.year == null || yearOf(it.startedAt) == request.year) &&
             (request.country == null || request.country in countryCodes(it.countries))
     }.mapNotNull { tour ->
-        val track = runCatching { GpxReader.readTrack(tour.gpxData) }.getOrNull() ?: return@mapNotNull null
+        val track = runCatching { GpxReader.readTrack(gpxOf(tour.id)) }.getOrNull() ?: return@mapNotNull null
         val kept = ArrayList<GeoPoint>()
         val dist = FloatArray(1)
         track.forEachIndexed { i, p ->

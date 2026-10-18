@@ -5,6 +5,7 @@ import androidx.room.Room
 import de.wolaang.app.data.db.PlannedRouteDao
 import de.wolaang.app.data.db.TourDao
 import de.wolaang.app.data.db.WolaangDatabase
+import de.wolaang.app.data.db.gpxOf
 import de.wolaang.app.maps.OfflineMaps
 import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.tracking.TrackRecorder
@@ -56,13 +57,13 @@ class AppContainer(context: Context) {
         // in the background, whichever way they were saved.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope.launch {
-            tourDao.getUntaggedTours().collect { tours ->
-                tours.forEach { tourDao.setCountries(it.id, countriesOf(it.gpxData)) }
+            tourDao.getUntaggedTourIds().collect { ids ->
+                ids.forEach { tourDao.setCountries(it, countriesOf(tourDao.gpxOf(it))) }
             }
         }
         scope.launch {
-            plannedRouteDao.getUntaggedRoutes().collect { routes ->
-                routes.forEach { plannedRouteDao.setCountries(it.id, countriesOf(it.gpxData)) }
+            plannedRouteDao.getUntaggedRouteIds().collect { ids ->
+                ids.forEach { plannedRouteDao.setCountries(it, countriesOf(plannedRouteDao.gpxOf(it))) }
             }
         }
     }

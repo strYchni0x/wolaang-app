@@ -47,6 +47,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
 import de.wolaang.app.data.GpxReader
 import de.wolaang.app.data.MapSource
+import de.wolaang.app.data.db.getTourById
+import de.wolaang.app.data.db.gpxOf
 import de.wolaang.app.data.model.Tour
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RoutePoint
@@ -333,7 +335,7 @@ fun MapScreen() {
             buildOverviewLines(
                 container.tourDao.getAllTours().first(),
                 OverviewRequest(filter, overviewYear, overviewCountry),
-            )
+            ) { container.tourDao.gpxOf(it) }
         }
         overviewLoading = false
         val all = overviewLines.flatMap { it.points }

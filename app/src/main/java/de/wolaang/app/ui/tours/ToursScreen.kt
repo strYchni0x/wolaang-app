@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.wolaang.app.WolaangApp
 import de.wolaang.app.data.GpxShare
+import de.wolaang.app.data.db.gpxOf
 import de.wolaang.app.data.ImportOptions
 import de.wolaang.app.data.ImportResult
 import de.wolaang.app.data.ImportTarget
@@ -71,7 +72,8 @@ private data class ListEntry(
     val name: String,
     val details: String,
     val date: Long,
-    val gpx: String,
+    /** Loads the GPX (only for sharing; the lists leave it out). */
+    val gpx: suspend () -> String,
     val delete: suspend () -> Unit,
     /** Opens the entry on the map (planned routes in the Plan tab, recorded tours in the Map tab). */
     val open: (() -> Unit)? = null,
@@ -119,7 +121,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             name = r.name,
             details = summary(r.type, r.distanceMeters, r.estimatedDurationSeconds, r.ascentMeters),
             date = r.createdAt,
-            gpx = r.gpxData,
+            gpx = { container.plannedRouteDao.gpxOf(r.id) },
             delete = { container.plannedRouteDao.deletePlannedRoute(r.id) },
             open = {
                 container.routeToOpen.value = r.id
@@ -133,7 +135,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             name = t.name,
             details = summary(t.type, t.distanceMeters, t.durationSeconds, t.elevationGainMeters.toInt()),
             date = t.startedAt,
-            gpx = t.gpxData,
+            gpx = { container.tourDao.gpxOf(t.id) },
             delete = { container.tourDao.deleteTour(t.id) },
             open = {
                 container.tourToShow.value = t.id
@@ -181,7 +183,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
             if (plannedEntries.isNotEmpty()) {
                 item { SectionHeader("Geplante Routen") }
                 items(plannedEntries, key = { it.key }) { entry ->
-                    EntryCard(entry, onShare = { GpxShare.share(context, entry.name, entry.gpx) }) {
+                    EntryCard(entry, onShare = { scope.launch { GpxShare.share(context, entry.name, entry.gpx()) } }) {
                         pendingDelete = entry
                     }
                 }
@@ -201,7 +203,7 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
                     }
                 }
                 items(tourEntries, key = { it.key }) { entry ->
-                    EntryCard(entry, onShare = { GpxShare.share(context, entry.name, entry.gpx) }) {
+                    EntryCard(entry, onShare = { scope.launch { GpxShare.share(context, entry.name, entry.gpx()) } }) {
                         pendingDelete = entry
                     }
                 }
