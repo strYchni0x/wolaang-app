@@ -249,11 +249,19 @@ fun ToursScreen(onOpenPlan: () -> Unit, onOpenMap: () -> Unit) {
         AlertDialog(
             onDismissRequest = { importResult = null },
             title = { Text(if (result.imported == 1) "1 Tour importiert" else "${result.imported} Touren importiert") },
-            text = if (result.failed.isEmpty()) null else {
+            text = if (result.skipped == 0 && result.failed.isEmpty()) null else {
                 {
-                    Column {
-                        Text("Nicht importiert:")
-                        result.failed.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        if (result.skipped > 0) {
+                            Text(
+                                if (result.skipped == 1) "1 Tour übersprungen, sie ist schon vorhanden."
+                                else "${result.skipped} Touren übersprungen, sie sind schon vorhanden."
+                            )
+                        }
+                        if (result.failed.isNotEmpty()) {
+                            Text("Nicht importiert:", modifier = Modifier.padding(top = if (result.skipped > 0) 8.dp else 0.dp))
+                            result.failed.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                        }
                     }
                 }
             },

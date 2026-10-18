@@ -22,7 +22,8 @@ enum class ImportTarget { PLANNED, RECORDED }
 /** null = guess hike/bike per file. */
 data class ImportOptions(val target: ImportTarget, val type: TourType?)
 
-data class ImportResult(val imported: Int, val failed: List<String>)
+/** [skipped]: files already in the app (e.g. when importing the same folder again). */
+data class ImportResult(val imported: Int, val skipped: Int, val failed: List<String>)
 
 /**
  * Imports GPX files (e.g. a Komoot export) either as planned routes — editable in the
@@ -36,6 +37,7 @@ class GpxImporter(
 
     suspend fun import(uris: List<Uri>, options: ImportOptions): ImportResult = withContext(Dispatchers.IO) {
         var imported = 0
+        var skipped = 0
         val failed = ArrayList<String>()
         for (uri in uris) {
             val fileName = displayName(uri)
@@ -45,22 +47,25 @@ class GpxImporter(
                 val track = GpxReader.read(text.reader())
                 require(track.points.size >= 2) { "keine Strecke enthalten" }
                 val name = track.name ?: fileName.removeSuffix(".gpx").removeSuffix(".GPX")
-                when (options.target) {
+                val added = when (options.target) {
                     ImportTarget.PLANNED -> importPlanned(name, track, options.type)
                     ImportTarget.RECORDED -> importRecorded(name, track, text, options.type)
                 }
-                imported++
+                if (added) imported++ else skipped++
             } catch (e: XmlPullParserException) {
                 failed.add("$fileName: keine gültige GPX-Datei")
             } catch (e: Exception) {
                 failed.add("$fileName: ${e.message ?: e.javaClass.simpleName}")
             }
         }
-        ImportResult(imported, failed)
+        ImportResult(imported, skipped, failed)
     }
 
-    private suspend fun importPlanned(name: String, track: GpxTrack, typeChoice: TourType?) {
+    /** Returns false if the route is already there (same name, about the same length). */
+    private suspend fun importPlanned(name: String, track: GpxTrack, typeChoice: TourType?): Boolean {
         val stats = TrackStats.of(track.points)
+        val distance = stats.distanceMeters.toFloat()
+        if (plannedRouteDao.hasRouteNamed(name, distance, distanceTolerance(distance))) return false
         val type = typeChoice ?: guessType(name, stats)
         // The Plan tab routes through these points; keep few so the pins stay readable.
         val support = simplify(track.points, MAX_SUPPORT_POINTS)
@@ -81,11 +86,24 @@ class GpxImporter(
                 notes = "Importiert",
             )
         )
+        return true
     }
 
-    private suspend fun importRecorded(name: String, track: GpxTrack, originalGpx: String, typeChoice: TourType?) {
+    /**
+     * Returns false if the tour is already there: same start time (to the minute) and about
+     * the same length, or, for tracks without timestamps, same name and length.
+     */
+    private suspend fun importRecorded(name: String, track: GpxTrack, originalGpx: String, typeChoice: TourType?): Boolean {
         val stats = TrackStats.of(track.points)
-        val start = track.points.firstNotNullOfOrNull { it.time } ?: System.currentTimeMillis()
+        val distance = stats.distanceMeters.toFloat()
+        val trackStart = track.points.firstNotNullOfOrNull { it.time }
+        val exists = if (trackStart != null) {
+            tourDao.hasTourAt(trackStart, SAME_START_MS, distance, distanceTolerance(distance))
+        } else {
+            tourDao.hasTourNamed(name, distance, distanceTolerance(distance))
+        }
+        if (exists) return false
+        val start = trackStart ?: System.currentTimeMillis()
         val end = track.points.lastOrNull { it.time != null }?.time
         tourDao.insertTour(
             Tour(
@@ -101,7 +119,11 @@ class GpxImporter(
                 notes = "Importiert",
             )
         )
+        return true
     }
+
+    // Length differences up to this count as the same track (GPS noise, rounding).
+    private fun distanceTolerance(distance: Float) = maxOf(50f, distance * 0.05f)
 
     private fun displayName(uri: Uri): String =
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
@@ -200,6 +222,7 @@ class GpxImporter(
 
     private companion object {
         const val MAX_SUPPORT_POINTS = 12
+        const val SAME_START_MS = 60_000L
         const val ELEVATION_HYSTERESIS_M = 3.0
         const val BIKE_SPEED_MPS = 16 / 3.6           // planning estimate for cycling
         const val BIKE_GUESS_SPEED_MPS = 9 / 3.6       // faster average than this = bike

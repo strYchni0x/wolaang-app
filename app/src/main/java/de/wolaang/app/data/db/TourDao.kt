@@ -26,6 +26,20 @@ interface TourDao {
     @Query("SELECT substr(gpxData, :start, :length) FROM tours WHERE id = :id")
     suspend fun gpxPart(id: Long, start: Int, length: Int): String?
 
+    /** Whether a tour starting within [toleranceMs] of [startedAt] with about this length exists. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM tours WHERE ABS(startedAt - :startedAt) <= :toleranceMs " +
+            "AND ABS(distanceMeters - :distanceMeters) <= :distanceTolerance)"
+    )
+    suspend fun hasTourAt(startedAt: Long, toleranceMs: Long, distanceMeters: Float, distanceTolerance: Float): Boolean
+
+    /** For tracks without timestamps: same name and about the same length. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM tours WHERE name = :name " +
+            "AND ABS(distanceMeters - :distanceMeters) <= :distanceTolerance)"
+    )
+    suspend fun hasTourNamed(name: String, distanceMeters: Float, distanceTolerance: Float): Boolean
+
     @Insert
     suspend fun insertTour(tour: Tour): Long
 
