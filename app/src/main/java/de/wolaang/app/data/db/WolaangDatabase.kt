@@ -9,7 +9,7 @@ import de.wolaang.app.data.model.Tour
 
 @Database(
     entities = [Tour::class, PlannedRoute::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class WolaangDatabase : RoomDatabase() {
@@ -41,6 +41,14 @@ abstract class WolaangDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `tours` ADD COLUMN `countries` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE `planned_routes` ADD COLUMN `countries` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** v4: corrected borders (Borkum, small islands); determine all countries again. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE `tours` SET `countries` = ''")
+                db.execSQL("UPDATE `planned_routes` SET `countries` = ''")
             }
         }
     }

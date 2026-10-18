@@ -41,10 +41,33 @@ class CountryLookup(private val context: Context) {
     /** German country name for an ISO code, e.g. "LU" → "Luxemburg". */
     fun nameOf(code: String): String = countries.firstOrNull { it.code == code }?.name ?: code
 
+    /**
+     * Country containing the point. Small islands (Juist, Norderney, …) are missing at this
+     * scale, so a point outside every country falls back to the nearest one within
+     * [NEAREST_MAX_M]; open sea stays null.
+     */
     fun countryAt(lat: Double, lon: Double): String? {
         val x = Math.round(lon * 1e4).toInt()
         val y = Math.round(lat * 1e4).toInt()
         return countries.firstOrNull { c -> c.polygons.any { it.contains(x, y) } }?.code
+            ?: nearestCountry(x, y, lat)
+    }
+
+    private fun nearestCountry(x: Int, y: Int, lat: Double): String? {
+        // Work in 1e-4 degrees of latitude; longitudes shrink by cos(lat).
+        val k = Math.cos(Math.toRadians(lat))
+        val maxUnits = NEAREST_MAX_M / METERS_PER_UNIT
+        val maxLon = (maxUnits / k).toInt()
+        var best: String? = null
+        var bestDist = maxUnits
+        for (c in countries) for (p in c.polygons) {
+            if (x < p.minLon - maxLon || x > p.maxLon + maxLon ||
+                y < p.minLat - maxUnits || y > p.maxLat + maxUnits
+            ) continue
+            val d = distanceToRing(p.rings[0], x, y, k)
+            if (d < bestDist) { bestDist = d; best = c.code }
+        }
+        return best
     }
 
     /**
@@ -82,6 +105,25 @@ class CountryLookup(private val context: Context) {
 
     private companion object {
         const val SAMPLE_SPACING_M = 1000f
+        const val NEAREST_MAX_M = 15_000.0
+        const val METERS_PER_UNIT = 11.132  // 1e-4 degrees of latitude
+
+        /** Shortest distance from (x, y) to the ring's edges, in 1e-4 degrees of latitude. */
+        fun distanceToRing(ring: IntArray, x: Int, y: Int, k: Double): Double {
+            var best = Double.MAX_VALUE
+            val n = ring.size / 2
+            var j = n - 1
+            for (i in 0 until n) {
+                val ax = ring[2 * j] * k; val ay = ring[2 * j + 1].toDouble()
+                val dx = ring[2 * i] * k - ax; val dy = ring[2 * i + 1] - ay
+                val px = x * k - ax; val py = y - ay
+                val len = dx * dx + dy * dy
+                val t = if (len == 0.0) 0.0 else ((px * dx + py * dy) / len).coerceIn(0.0, 1.0)
+                best = minOf(best, Math.hypot(px - t * dx, py - t * dy))
+                j = i
+            }
+            return best
+        }
 
         /** Even-odd ray casting; [ring] holds lon/lat pairs. */
         fun inRing(ring: IntArray, x: Int, y: Int): Boolean {
