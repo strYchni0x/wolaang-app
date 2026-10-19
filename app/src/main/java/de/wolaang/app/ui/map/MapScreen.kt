@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -55,6 +56,12 @@ import de.wolaang.app.data.db.getTourById
 import de.wolaang.app.data.db.gpxOf
 import de.wolaang.app.data.model.Tour
 import de.wolaang.app.data.model.TourType
+import de.wolaang.app.navigation.NavigationProgress
+import de.wolaang.app.navigation.TurnKind
+import de.wolaang.app.navigation.VIBRATE_ARRIVED
+import de.wolaang.app.navigation.VIBRATE_OFF_ROUTE
+import de.wolaang.app.navigation.VIBRATE_TURN
+import de.wolaang.app.navigation.vibrate
 import de.wolaang.app.routing.RoutePoint
 import de.wolaang.app.ui.record.RECORD_BUTTON_CLEARANCE
 import de.wolaang.app.ui.plan.ElevationProfileCard
@@ -62,6 +69,7 @@ import de.wolaang.app.ui.plan.ProfileSample
 import de.wolaang.app.ui.plan.WaypointIcons
 import de.wolaang.app.ui.plan.buildProfile
 import java.util.Locale
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -92,6 +100,13 @@ private const val OVERVIEW_DOT_MIN_ZOOM = 13.0
 
 // Accuracy (meters) at or below which we consider the fix "good" and hide the status hint.
 private const val GOOD_ACCURACY_M = 20f
+
+// Navigation: route color, zoom, fixes used, and when to buzz before a turn.
+private val NAV_COLOR = Color.parseColor("#1565C0")
+private const val NAV_ZOOM = 17.0
+private const val NAV_MAX_ACCURACY_M = 50f
+private const val TURN_ALERT_M = 60.0
+private const val BUZZ_MIN_TURN_DEG = 60f
 
 // Zoom the map shows at least while recording.
 private const val RECORDING_MIN_ZOOM = 16.0
@@ -504,6 +519,99 @@ fun MapScreen() {
         mapView.invalidate()
     }
 
+    // Navigation along a route from the Plan tab: the route ahead in blue, the part behind
+    // in gray, and a dashed line back to the route when off it.
+    val navigator by container.navigation.collectAsStateWithLifecycle()
+    var navProgress by remember { mutableStateOf<NavigationProgress?>(null) }
+    val navAhead = remember {
+        Polyline().apply {
+            outlinePaint.color = NAV_COLOR
+            outlinePaint.strokeWidth = 14f
+        }
+    }
+    val navDone = remember {
+        Polyline().apply {
+            outlinePaint.color = Color.GRAY
+            outlinePaint.alpha = 0xA0
+            outlinePaint.strokeWidth = 10f
+        }
+    }
+    val navBack = remember {
+        Polyline().apply {
+            outlinePaint.color = Color.parseColor("#D32F2F")
+            outlinePaint.strokeWidth = 8f
+            outlinePaint.pathEffect = DashPathEffect(floatArrayOf(24f, 18f), 0f)
+        }
+    }
+    val navEnd = remember {
+        Marker(mapView).apply {
+            icon = WaypointIcons.forIndex(context, 1, 2)
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            setOnMarkerClickListener { _, _ -> true }
+        }
+    }
+    val navPoints = remember(navigator) { navigator?.route?.points?.map { GeoPoint(it.lat, it.lon) } ?: emptyList() }
+    DisposableEffect(navigator) {
+        if (navigator != null) {
+            shownTour = null
+            shownPoints = emptyList()
+            scrubSample = null
+            overviewFilter = null
+            overviewYear = null
+            overviewCountry = null
+            navAhead.setPoints(navPoints)
+            navDone.setPoints(emptyList())
+            navBack.setPoints(emptyList())
+            navEnd.position = navPoints.last()
+            // Above overview lines, below the live track and the location marker.
+            mapView.overlays.addAll(overviewOverlays.size, listOf(navDone, navAhead, navBack))
+            mapView.overlays.add(navEnd)
+            // Without voice the screen is the guide: keep it on while navigating.
+            mapView.keepScreenOn = true
+            container.mapHeadingUp.value = true
+            followMe()
+            if (mapView.zoomLevelDouble < NAV_ZOOM) mapView.controller.setZoom(NAV_ZOOM)
+            mapView.invalidate()
+        }
+        onDispose {
+            mapView.overlays.removeAll(listOf(navDone, navAhead, navBack, navEnd))
+            mapView.keepScreenOn = false
+            mapView.invalidate()
+        }
+    }
+    LaunchedEffect(currentLocation, navigator) {
+        val nav = navigator ?: return@LaunchedEffect
+        val fix = currentLocation ?: return@LaunchedEffect
+        if (fix.accuracy > NAV_MAX_ACCURACY_M) return@LaunchedEffect
+        val p = withContext(Dispatchers.Default) {
+            nav.update(fix.latitude, fix.longitude, fix.accuracy.toDouble())
+        }
+        navProgress = p
+        val split = nav.route.along.indexOfFirst { it > p.alongMeters }.let { if (it < 0) navPoints.size else it }
+        val here = GeoPoint(p.closest.lat, p.closest.lon)
+        navDone.setPoints(navPoints.subList(0, split) + here)
+        navAhead.setPoints(listOf(here) + navPoints.subList(split, navPoints.size))
+        navBack.setPoints(if (p.isOffRoute) listOf(GeoPoint(fix.latitude, fix.longitude), here) else emptyList())
+        mapView.invalidate()
+    }
+    // Silent hints: a short buzz before each clear turn, a double one when leaving the route,
+    // a long one on arrival.
+    val buzzedTurns = remember(navigator) { mutableSetOf<Double>() }
+    val navFlags = remember(navigator) { BooleanArray(2) } // [was off route, arrived]
+    LaunchedEffect(navProgress) {
+        val p = navProgress ?: return@LaunchedEffect
+        val next = p.next
+        if (!p.isOffRoute && next.kind != TurnKind.ARRIVE && abs(next.angle) >= BUZZ_MIN_TURN_DEG &&
+            p.toNextMeters <= TURN_ALERT_M && buzzedTurns.add(next.alongMeters)
+        ) vibrate(context, VIBRATE_TURN)
+        if (p.isOffRoute && !navFlags[0]) vibrate(context, VIBRATE_OFF_ROUTE)
+        navFlags[0] = p.isOffRoute
+        if (p.hasArrived && !navFlags[1]) {
+            navFlags[1] = true
+            vibrate(context, VIBRATE_ARRIVED)
+        }
+    }
+
     // Forward Compose lifecycle events to the MapView.
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -547,7 +655,26 @@ fun MapScreen() {
             MapZoomSlider(mapView)
         }
 
-        if (recordingState.isRecording) {
+        val nav = navigator
+        if (nav != null) {
+            NavigationCard(
+                routeName = nav.route.name,
+                type = nav.route.type,
+                progress = navProgress,
+                recordingLine = if (recordingState.isRecording) String.format(
+                    Locale.GERMANY, "Aufzeichnung läuft · %.2f km", recordingState.distanceMeters / 1000.0,
+                ) else null,
+                onStop = {
+                    container.navigation.value = null
+                    navProgress = null
+                    container.mapHeadingUp.value = false
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(12.dp)
+                    .fillMaxWidth(),
+            )
+        } else if (recordingState.isRecording) {
             StatsCard(
                 type = recordingState.type,
                 startedAt = recordingState.startedAt,

@@ -106,7 +106,7 @@ fun WolaangNavHost() {
                     onOpenPlan = { navigateTo(Screen.Plan) },
                     onOpenMap = { navigateTo(Screen.Map) },
                 ) }
-            composable(Screen.Plan.route) { PlanScreen() }
+            composable(Screen.Plan.route) { PlanScreen(onNavigate = { navigateTo(Screen.Map) }) }
             composable(Screen.Settings.route) { SettingsScreen() }
         }
     }

@@ -12,6 +12,7 @@ import de.wolaang.app.tracking.TrackRecorder
 import de.wolaang.app.ui.map.OverviewRequest
 import de.wolaang.app.geo.CountryLookup
 import de.wolaang.app.geo.GeoidModel
+import de.wolaang.app.navigation.RouteNavigator
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -116,6 +117,9 @@ class AppContainer(context: Context) {
 
     /** Overview of all recorded tours the Map tab should show next (set by the Tours tab). */
     val toursOverview = MutableStateFlow<OverviewRequest?>(null)
+
+    /** Route being navigated (started in the Plan tab, shown on the map), null otherwise. */
+    val navigation = MutableStateFlow<RouteNavigator?>(null)
 
     /** Map turns with the direction of travel (compass button); north up otherwise. */
     val mapHeadingUp = MutableStateFlow(false)

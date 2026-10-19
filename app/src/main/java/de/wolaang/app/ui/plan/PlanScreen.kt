@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -58,6 +59,8 @@ import de.wolaang.app.data.MapSource
 import de.wolaang.app.data.db.getPlannedRouteById
 import de.wolaang.app.data.model.PlannedRoute
 import de.wolaang.app.data.model.TourType
+import de.wolaang.app.navigation.NavigationRoute
+import de.wolaang.app.navigation.RouteNavigator
 import de.wolaang.app.routing.RouteResult
 import de.wolaang.app.ui.common.rememberMeteredDownloadGuard
 import de.wolaang.app.ui.map.MapZoomSlider
@@ -94,7 +97,7 @@ private fun defaultRouteName(type: TourType): String =
  * As soon as there are two points the route is computed offline with BRouter.
  */
 @Composable
-fun PlanScreen() {
+fun PlanScreen(onNavigate: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val container = remember { (context.applicationContext as WolaangApp).container }
@@ -442,6 +445,12 @@ fun PlanScreen() {
                                 val name = editingRoute?.name ?: defaultRouteName(tourType)
                                 GpxShare.share(context, name, GpxWriter.writeRoute(name, route!!.points))
                             }) { Text("GPX teilen") }
+                            FilledTonalButton(onClick = {
+                                val name = editingRoute?.name ?: defaultRouteName(tourType)
+                                container.navigation.value =
+                                    RouteNavigator(NavigationRoute(name, tourType, route!!.points))
+                                onNavigate()
+                            }) { Text("Navigieren") }
                         }
                     }
                     waypoints.isEmpty() -> Text("Tippe auf die Karte, um den Start zu setzen.")
