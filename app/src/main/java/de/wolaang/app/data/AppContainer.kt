@@ -89,4 +89,7 @@ class AppContainer(context: Context) {
 
     /** Overview of all recorded tours the Map tab should show next (set by the Tours tab). */
     val toursOverview = MutableStateFlow<OverviewRequest?>(null)
+
+    /** Map turns with the direction of travel (compass button); north up otherwise. */
+    val mapHeadingUp = MutableStateFlow(false)
 }

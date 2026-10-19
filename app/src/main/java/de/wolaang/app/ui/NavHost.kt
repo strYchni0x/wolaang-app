@@ -90,6 +90,7 @@ fun WolaangNavHost() {
                 }
                 RecordButton(
                     onStarted = { navigateTo(Screen.Map) },
+                    onStopped = { navigateTo(Screen.Map) },
                     modifier = Modifier.align(Alignment.TopCenter).offset(y = (-22).dp),
                 )
             }

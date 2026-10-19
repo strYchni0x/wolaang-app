@@ -36,15 +36,18 @@ fun MapView.useMapSource(offlineFiles: List<File>, dark: Boolean, textSize: MapT
     setDarkTiles(dark)
 }
 
+// Fitting a tiny box (a very short tour) would otherwise zoom in all the way.
+private const val BOX_MAX_ZOOM = 17.0
+
 /** Zooms to [box]; waits for the first layout if the map was just created and has no size yet. */
 fun MapView.zoomToBoxWhenReady(box: org.osmdroid.util.BoundingBox) {
     if (isLayoutOccurred) {
-        post { zoomToBoundingBox(box, false, 60) }
+        post { zoomToBoundingBox(box, false, 60, BOX_MAX_ZOOM, null) }
     } else {
         addOnFirstLayoutListener(object : MapView.OnFirstLayoutListener {
             override fun onFirstLayout(v: android.view.View?, left: Int, top: Int, right: Int, bottom: Int) {
                 removeOnFirstLayoutListener(this)
-                zoomToBoundingBox(box, false, 60)
+                zoomToBoundingBox(box, false, 60, BOX_MAX_ZOOM, null)
             }
         })
     }

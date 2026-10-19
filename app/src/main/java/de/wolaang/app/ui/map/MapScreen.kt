@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,6 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,6 +63,7 @@ import de.wolaang.app.ui.plan.WaypointIcons
 import de.wolaang.app.ui.plan.buildProfile
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,6 +93,15 @@ private const val OVERVIEW_DOT_MIN_ZOOM = 13.0
 // Accuracy (meters) at or below which we consider the fix "good" and hide the status hint.
 private const val GOOD_ACCURACY_M = 20f
 
+// Zoom the map shows at least while recording.
+private const val RECORDING_MIN_ZOOM = 16.0
+
+// Direction of travel: GPS course from this speed on (bike), below that the direction over
+// at least this distance (walking); fixes worse than this accuracy are ignored.
+private const val COURSE_MIN_SPEED_MPS = 2.5f
+private const val COURSE_MIN_STEP_M = 12f
+private const val COURSE_MAX_ACCURACY_M = 25f
+
 /** Most recent last-known location across GPS and network providers, or null. */
 internal fun bestLastKnownLocation(lm: LocationManager): Location? =
     listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
@@ -108,6 +122,7 @@ fun MapScreen() {
     val container = remember { (context.applicationContext as WolaangApp).container }
     val recorder = container.trackRecorder
     val recordingState by recorder.state.collectAsStateWithLifecycle()
+    val headingUp by container.mapHeadingUp.collectAsStateWithLifecycle()
 
     var hasLocationPermission by remember {
         mutableStateOf(
@@ -159,6 +174,34 @@ fun MapScreen() {
         MyLocationNewOverlay(GpsMyLocationProvider(context), mapView)
     }
 
+    // Direction of travel for "heading up": the GPS course when moving fast enough, otherwise
+    // the direction from the last position at least COURSE_MIN_STEP_M away (walking pace).
+    var course by remember { mutableStateOf<Float?>(null) }
+    val courseAnchor = remember { arrayOfNulls<Location>(1) }
+    fun updateCourse(fix: Location) {
+        if (fix.provider != LocationManager.GPS_PROVIDER || fix.accuracy > COURSE_MAX_ACCURACY_M) return
+        val anchor = courseAnchor[0]
+        when {
+            fix.hasBearing() && fix.speed >= COURSE_MIN_SPEED_MPS -> {
+                course = fix.bearing
+                courseAnchor[0] = fix
+            }
+            anchor == null -> courseAnchor[0] = fix
+            anchor.distanceTo(fix) >= COURSE_MIN_STEP_M -> {
+                course = anchor.bearingTo(fix)
+                courseAnchor[0] = fix
+            }
+        }
+    }
+    // Current map rotation, for the compass needle.
+    var mapOrientation by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(headingUp, course) {
+        // Heading up turns the map once a direction of travel is known; north up otherwise.
+        mapView.mapOrientation = if (headingUp) -(course ?: 0f) else 0f
+        mapOrientation = mapView.mapOrientation
+        mapView.invalidate()
+    }
+
     val trackPolyline = remember {
         Polyline().apply {
             outlinePaint.color = Color.parseColor("#D32F2F")
@@ -208,6 +251,13 @@ fun MapScreen() {
         tourPolyline.outlinePaint.color = overviewColor(tour.type)
         shownPoints = GpxReader.readTrack(tour.gpxData)
         shownTour = tour
+    }
+
+    /** Centers on the current position and keeps following it. */
+    fun followMe() {
+        if (!hasLocationPermission) return
+        locationOverlay.enableFollowLocation()
+        locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }
     }
     val scrubMarker = remember {
         Marker(mapView).apply {
@@ -263,6 +313,7 @@ fun MapScreen() {
             val l = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     currentLocation = location
+                    updateCourse(location)
                 }
 
                 override fun onProviderEnabled(provider: String) {}
@@ -411,7 +462,7 @@ fun MapScreen() {
             // Leave room for the info card on top and the profile + button below.
             val box = BoundingBox.fromGeoPointsSafe(points)
             val padded = BoundingBox(
-                box.latNorth + box.latitudeSpan * 0.4,
+                box.latNorth + box.latitudeSpan * 0.8,
                 box.lonEast + box.longitudeSpanWithDateLine * 0.1,
                 box.latSouth - box.latitudeSpan * 1.3,
                 box.lonWest - box.longitudeSpanWithDateLine * 0.1,
@@ -428,6 +479,20 @@ fun MapScreen() {
             mapView.overlays.add(scrubMarker)
         }
         mapView.invalidate()
+    }
+
+    // A started recording takes over the map: hide any shown tour or overview and follow
+    // the user (also when coming back to the map during a recording).
+    LaunchedEffect(recordingState.isRecording) {
+        if (!recordingState.isRecording) return@LaunchedEffect
+        shownTour = null
+        shownPoints = emptyList()
+        scrubSample = null
+        overviewFilter = null
+        overviewYear = null
+        overviewCountry = null
+        followMe()
+        if (mapView.zoomLevelDouble < RECORDING_MIN_ZOOM) mapView.controller.setZoom(RECORDING_MIN_ZOOM)
     }
 
     // Redraw the live track polyline whenever the recorded points change.
@@ -463,11 +528,29 @@ fun MapScreen() {
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidViewMap(mapView)
-        MapZoomSlider(mapView, Modifier.align(Alignment.CenterEnd).padding(end = 8.dp))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+        ) {
+            CompassButton(
+                mapOrientation = mapOrientation,
+                headingUp = headingUp,
+                onClick = {
+                    container.mapHeadingUp.value = !headingUp
+                    // Turning with the direction of travel only makes sense while following.
+                    if (!headingUp) followMe()
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            LocateButton(onClick = { followMe() })
+            Spacer(Modifier.height(8.dp))
+            MapZoomSlider(mapView)
+        }
 
         if (recordingState.isRecording) {
             StatsCard(
                 type = recordingState.type,
+                startedAt = recordingState.startedAt,
                 distanceMeters = recordingState.distanceMeters,
                 elevationGainMeters = recordingState.elevationGainMeters,
                 modifier = Modifier
@@ -478,15 +561,13 @@ fun MapScreen() {
         } else if (shownTour != null) {
             TourInfoCard(
                 tour = shownTour!!,
+                points = shownPoints,
                 onClose = {
                     shownTour = null
                     shownPoints = emptyList()
                     scrubSample = null
                     // Back to the overview if the tour was picked there; otherwise to the user.
-                    if (overviewFilter == null && hasLocationPermission) {
-                        locationOverlay.enableFollowLocation()
-                        locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }
-                    }
+                    if (overviewFilter == null) followMe()
                 },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -507,10 +588,7 @@ fun MapScreen() {
                     overviewFilter = null
                     overviewYear = null
                     overviewCountry = null
-                    if (hasLocationPermission) {
-                        locationOverlay.enableFollowLocation()
-                        locationOverlay.myLocation?.let { mapView.controller.animateTo(it) }
-                    }
+                    followMe()
                 },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -556,33 +634,6 @@ private fun AndroidViewMap(mapView: MapView) {
 }
 
 @Composable
-private fun TourInfoCard(tour: Tour, onClose: () -> Unit, modifier: Modifier = Modifier) {
-    Card(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f).padding(start = 16.dp, top = 12.dp, bottom = 12.dp)) {
-                Text(tour.name, style = MaterialTheme.typography.titleMedium)
-                val kind = if (tour.type == TourType.BIKE) "Rad" else "Wandern"
-                Text(
-                    String.format(
-                        Locale.GERMANY,
-                        "%s · %.1f km · %d:%02d h · %d m ↑",
-                        kind,
-                        tour.distanceMeters / 1000.0,
-                        tour.durationSeconds / 3600,
-                        (tour.durationSeconds % 3600) / 60,
-                        tour.elevationGainMeters.toInt(),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Clear, contentDescription = "Tour ausblenden")
-            }
-        }
-    }
-}
-
-@Composable
 private fun GpsStatusCard(accuracyMeters: Float?, modifier: Modifier = Modifier) {
     val text = if (accuracyMeters == null) {
         "GPS wird gesucht…"
@@ -602,10 +653,19 @@ private fun GpsStatusCard(accuracyMeters: Float?, modifier: Modifier = Modifier)
 @Composable
 private fun StatsCard(
     type: TourType,
+    startedAt: Long,
     distanceMeters: Float,
     elevationGainMeters: Float,
     modifier: Modifier = Modifier,
 ) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val seconds = ((now - startedAt) / 1000).coerceAtLeast(0)
     Card(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -615,6 +675,7 @@ private fun StatsCard(
         ) {
             Text(if (type == TourType.BIKE) "Rad" else "Wandern")
             Text(String.format(Locale.GERMANY, "%.2f km", distanceMeters / 1000.0))
+            Text(String.format(Locale.GERMANY, "%d:%02d h", seconds / 3600, (seconds % 3600) / 60))
             Text(String.format(Locale.GERMANY, "%d m ↑", elevationGainMeters.toInt()))
         }
     }

@@ -86,7 +86,7 @@ class TrackingService : Service() {
                 val kind = if (finished.type == TourType.BIKE) "Radtour" else "Wanderung"
                 val name = "$kind " + DATE_FORMAT.format(Date(finished.startedAt))
                 val now = System.currentTimeMillis()
-                tourDao.insertTour(
+                val id = tourDao.insertTour(
                     Tour(
                         name = name,
                         type = finished.type,
@@ -98,6 +98,8 @@ class TrackingService : Service() {
                         gpxData = GpxWriter.write(name, finished.points),
                     )
                 )
+                // Show the finished tour with its figures on the map.
+                (application as WolaangApp).container.tourToShow.value = id
             }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()

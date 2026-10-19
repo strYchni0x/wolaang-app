@@ -20,6 +20,8 @@ data class RecordingState(
     val elevationGainMeters: Float = 0f,
     val startedAt: Long = 0L,
     val type: TourType = TourType.HIKE,
+    // Altitude the next climb is measured from (see [TrackRecorder.addPoint]).
+    val elevationReference: Double? = null,
 )
 
 /**
@@ -47,15 +49,31 @@ class TrackRecorder {
             val result = FloatArray(1)
             Location.distanceBetween(last.lat, last.lon, point.lat, point.lon, result)
             distance += result[0]
-            val dAlt = point.altitude - last.altitude
-            if (dAlt > 0) elevation += dAlt.toFloat()
+        }
+        // Count a climb only once it reaches ELEVATION_HYSTERESIS_M; GPS altitude jitters.
+        var reference = current.elevationReference
+        if (location.hasAltitude()) {
+            val ref = reference
+            when {
+                ref == null -> reference = point.altitude
+                point.altitude - ref >= ELEVATION_HYSTERESIS_M -> {
+                    elevation += (point.altitude - ref).toFloat()
+                    reference = point.altitude
+                }
+                point.altitude < ref -> reference = point.altitude
+            }
         }
 
         _state.value = current.copy(
             points = current.points + point,
             distanceMeters = distance,
             elevationGainMeters = elevation,
+            elevationReference = reference,
         )
+    }
+
+    private companion object {
+        const val ELEVATION_HYSTERESIS_M = 3.0
     }
 
     /** Stops recording, returns the final state, and resets back to idle. */

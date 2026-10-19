@@ -51,10 +51,11 @@ val RECORD_BUTTON_CLEARANCE = 34.dp
 /**
  * Round start/stop button raised out of the middle of the bottom bar, so a recording can be
  * started from every screen. Asks for the tour type before starting and confirms stopping.
- * [onStarted] runs once a recording has been started (e.g. to show the map).
+ * [onStarted] runs once a recording has been started, [onStopped] once it has been stopped
+ * (e.g. to show the map, where the finished tour appears).
  */
 @Composable
-fun RecordButton(onStarted: () -> Unit, modifier: Modifier = Modifier) {
+fun RecordButton(onStarted: () -> Unit, onStopped: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as WolaangApp).container }
     val state by container.trackRecorder.state.collectAsStateWithLifecycle()
@@ -131,6 +132,7 @@ fun RecordButton(onStarted: () -> Unit, modifier: Modifier = Modifier) {
                 TextButton(onClick = {
                     showStopDialog = false
                     TrackingService.stop(context)
+                    onStopped()
                 }) { Text("Beenden") }
             },
             dismissButton = { TextButton(onClick = { showStopDialog = false }) { Text("Weiter aufzeichnen") } },
