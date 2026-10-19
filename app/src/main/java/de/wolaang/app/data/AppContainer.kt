@@ -11,6 +11,8 @@ import de.wolaang.app.routing.OfflineRouter
 import de.wolaang.app.tracking.TrackRecorder
 import de.wolaang.app.ui.map.OverviewRequest
 import de.wolaang.app.geo.CountryLookup
+import de.wolaang.app.geo.GeoidModel
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +56,12 @@ class AppContainer(context: Context) {
     /** GPX import into planned routes or recorded tours. */
     val gpxImporter: GpxImporter = GpxImporter(context.contentResolver, tourDao, plannedRouteDao)
 
+    /** User preferences (theme, …). */
+    val settings: AppSettings = AppSettings(context)
+
+    /** EGM96 geoid, to store recorded heights above sea level instead of the ellipsoid. */
+    val geoid: GeoidModel = GeoidModel(context.applicationContext)
+
     /** Offline country borders (for the country filter in the Tours tab). */
     val countryLookup: CountryLookup = CountryLookup(context.applicationContext)
 
@@ -66,6 +74,7 @@ class AppContainer(context: Context) {
                 ids.forEach { tourDao.setCountries(it, countriesOf(tourDao.gpxOf(it))) }
             }
         }
+        scope.launch { fixSeaLevel() }
         scope.launch {
             plannedRouteDao.getUntaggedRouteIds().collect { ids ->
                 ids.forEach { plannedRouteDao.setCountries(it, countriesOf(plannedRouteDao.gpxOf(it))) }
@@ -73,13 +82,31 @@ class AppContainer(context: Context) {
         }
     }
 
+    /**
+     * Tours recorded before the geoid correction store GPS heights above the ellipsoid (about
+     * 40-50 m too high in Germany); convert them once to sea level and recount the ascent.
+     */
+    private suspend fun fixSeaLevel() {
+        if (settings.seaLevelFixDone) return
+        for (id in tourDao.getRecordedTourIds()) {
+            val gpx = tourDao.gpxOf(id)
+            if ("creator=\"wolaang\"" !in gpx) continue
+            val fixed = TRKPT_ELE.replace(gpx) { m ->
+                val (lat, lon, ele) = m.destructured
+                val sea = ele.toDouble() - geoid.undulation(lat.toDouble(), lon.toDouble())
+                m.value.replace("<ele>$ele</ele>", "<ele>${String.format(Locale.ROOT, "%.1f", sea)}</ele>")
+            }
+            val elevations = GpxReader.readTrack(fixed).mapNotNull { it.elevation }
+            tourDao.setTrack(id, fixed, ascentOf(elevations).toFloat())
+        }
+        settings.seaLevelFixDone = true
+    }
+
     private fun countriesOf(gpx: String): String {
         val track = runCatching { GpxReader.readTrack(gpx) }.getOrDefault(emptyList())
         return countryLookup.countriesOf(track).joinToString(",").ifEmpty { "-" }
     }
 
-    /** User preferences (theme, …). */
-    val settings: AppSettings = AppSettings(context)
 
     /** Id of a saved planned route the Plan tab should open next (set by the Tours tab). */
     val routeToOpen = MutableStateFlow<Long?>(null)
@@ -93,3 +120,6 @@ class AppContainer(context: Context) {
     /** Map turns with the direction of travel (compass button); north up otherwise. */
     val mapHeadingUp = MutableStateFlow(false)
 }
+
+// A track point as GpxWriter writes it: lat, lon and the elevation on the next line.
+private val TRKPT_ELE = Regex("""<trkpt lat="([-\d.E]+)" lon="([-\d.E]+)">\s*<ele>([-\d.E]+)</ele>""")

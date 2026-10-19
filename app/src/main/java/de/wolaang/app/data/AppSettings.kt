@@ -27,6 +27,11 @@ class AppSettings(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    /** Whether tours recorded before the sea-level fix have been corrected (see AppContainer). */
+    var seaLevelFixDone: Boolean
+        get() = prefs.getBoolean(KEY_SEA_LEVEL_FIX, false)
+        set(value) = prefs.edit().putBoolean(KEY_SEA_LEVEL_FIX, value).apply()
+
     private val _themeMode = MutableStateFlow(
         prefs.getString(KEY_THEME_MODE, null)
             ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
@@ -85,6 +90,7 @@ class AppSettings(context: Context) {
         set(value) = prefs.edit().putString(KEY_LAST_RECORDING_TYPE, value.name).apply()
 
     private companion object {
+        const val KEY_SEA_LEVEL_FIX = "sea_level_fix_done"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_RECORDING_TYPE = "last_recording_type"
         const val KEY_IMPORT_TARGET = "import_target"

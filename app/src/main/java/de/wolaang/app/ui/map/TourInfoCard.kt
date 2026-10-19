@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import de.wolaang.app.data.descentOf
 import de.wolaang.app.data.model.Tour
 import de.wolaang.app.data.model.TourType
 import de.wolaang.app.routing.RoutePoint
@@ -26,24 +27,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Same hysteresis as the import and the live recording, against GPS altitude noise.
-private const val ELEVATION_HYSTERESIS_M = 3.0
-
 /** Descent and lowest/highest point of a track; null without elevation data. */
 private class ElevationFigures(val descentMeters: Int, val minMeters: Int, val maxMeters: Int)
 
 private fun elevationFigures(points: List<RoutePoint>): ElevationFigures? {
     val elevations = points.mapNotNull { it.elevation }
     if (elevations.size < 2) return null
-    var descent = 0.0
-    var reference = elevations.first()
-    for (e in elevations) {
-        when {
-            reference - e >= ELEVATION_HYSTERESIS_M -> { descent += reference - e; reference = e }
-            e > reference -> reference = e
-        }
-    }
-    return ElevationFigures(descent.toInt(), elevations.min().toInt(), elevations.max().toInt())
+    return ElevationFigures(descentOf(elevations).toInt(), elevations.min().toInt(), elevations.max().toInt())
 }
 
 /** Top card of a tour shown on the map: name, date and the main figures. */

@@ -1,6 +1,7 @@
 package de.wolaang.app.tracking
 
 import android.location.Location
+import de.wolaang.app.data.ELEVATION_HYSTERESIS_M
 import de.wolaang.app.data.model.TourType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,11 +38,12 @@ class TrackRecorder {
         _state.value = RecordingState(isRecording = true, startedAt = System.currentTimeMillis(), type = type)
     }
 
-    fun addPoint(location: Location) {
+    /** [seaLevelAltitude]: height above sea level, null if the fix has none. */
+    fun addPoint(location: Location, seaLevelAltitude: Double?) {
         val current = _state.value
         if (!current.isRecording) return
 
-        val point = TrackPoint(location.latitude, location.longitude, location.altitude, location.time)
+        val point = TrackPoint(location.latitude, location.longitude, seaLevelAltitude ?: 0.0, location.time)
         var distance = current.distanceMeters
         var elevation = current.elevationGainMeters
 
@@ -52,7 +54,7 @@ class TrackRecorder {
         }
         // Count a climb only once it reaches ELEVATION_HYSTERESIS_M; GPS altitude jitters.
         var reference = current.elevationReference
-        if (location.hasAltitude()) {
+        if (seaLevelAltitude != null) {
             val ref = reference
             when {
                 ref == null -> reference = point.altitude
@@ -70,10 +72,6 @@ class TrackRecorder {
             elevationGainMeters = elevation,
             elevationReference = reference,
         )
-    }
-
-    private companion object {
-        const val ELEVATION_HYSTERESIS_M = 3.0
     }
 
     /** Stops recording, returns the final state, and resets back to idle. */

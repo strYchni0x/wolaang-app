@@ -1,0 +1,3 @@
+egm96-30.bin: EGM96 geoid heights (NGA, public domain), from GeographicLib's egm96-15 grid
+(https://geographiclib.sourceforge.io/), resampled to 0.5 degrees, stored in centimeters.
+Used to convert GPS heights above the WGS84 ellipsoid into heights above sea level.

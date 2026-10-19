@@ -42,7 +42,8 @@ class TrackingService : Service() {
 
     private val listener = LocationListener { location ->
         if (location.accuracy <= MAX_ACCURACY_M) {
-            recorder.addPoint(location)
+            // GPS heights are above the WGS84 ellipsoid; store them above sea level.
+            recorder.addPoint(location, (application as WolaangApp).container.geoid.seaLevelAltitude(location))
             updateNotification()
         }
     }

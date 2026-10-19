@@ -223,7 +223,6 @@ class GpxImporter(
     private companion object {
         const val MAX_SUPPORT_POINTS = 12
         const val SAME_START_MS = 60_000L
-        const val ELEVATION_HYSTERESIS_M = 3.0
         const val BIKE_SPEED_MPS = 16 / 3.6           // planning estimate for cycling
         const val BIKE_GUESS_SPEED_MPS = 9 / 3.6       // faster average than this = bike
         // Word starts only, so "Radtour" matches but "Paradies" doesn't.

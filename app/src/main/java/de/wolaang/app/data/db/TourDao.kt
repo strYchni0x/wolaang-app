@@ -53,6 +53,13 @@ interface TourDao {
     @Query("UPDATE tours SET countries = :countries WHERE id = :id")
     suspend fun setCountries(id: Long, countries: String)
 
+    /** Ids of tours recorded with this app (imports are noted as such). */
+    @Query("SELECT id FROM tours WHERE notes = ''")
+    suspend fun getRecordedTourIds(): List<Long>
+
+    @Query("UPDATE tours SET gpxData = :gpx, elevationGainMeters = :elevationGain WHERE id = :id")
+    suspend fun setTrack(id: Long, gpx: String, elevationGain: Float)
+
     @Query("DELETE FROM tours WHERE id = :id")
     suspend fun deleteTour(id: Long)
 
